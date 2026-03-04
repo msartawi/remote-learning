@@ -47,6 +47,13 @@ If you prefer manual control:
 
 The `frontend` container now builds and serves the React app. The backend container runs the org storage mode service (Node.js + Postgres).
 
+### Auth/session settings
+
+- `SESSION_SECRET` sets the HTTP‑only session cookie signer.
+- `COOKIE_DOMAIN` should match your apex domain (e.g. `femt.llc`).
+- `COOKIE_SECURE=auto` lets the backend detect HTTPS via `X‑Forwarded‑Proto`.
+- `DEFAULT_ROLE` and `ALLOW_SELF_ASSIGN_ROLES` control registration role assignment.
+
 ### Frontend build variables
 
 The frontend is built into a static Nginx image during `docker compose up`.

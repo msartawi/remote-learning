@@ -10,6 +10,7 @@ import {
   authenticate,
   createKeycloakUser,
   exchangePasswordToken,
+  assignRealmRoleToUser,
   requireAnyRole,
   verifyAccessToken,
 } from "./auth.js";
@@ -21,11 +22,19 @@ const port = Number(process.env.PORT || 3001);
 const autoMigrate = process.env.AUTO_MIGRATE === "true";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const sessionSecret = process.env.SESSION_SECRET || "dev-session-secret";
+const cookieSecureEnv = process.env.COOKIE_SECURE;
 const cookieSecure =
-  process.env.COOKIE_SECURE !== undefined
-    ? process.env.COOKIE_SECURE === "true"
-    : process.env.NODE_ENV === "production";
+  cookieSecureEnv === "auto"
+    ? "auto"
+    : cookieSecureEnv !== undefined
+      ? cookieSecureEnv === "true"
+      : process.env.NODE_ENV === "production";
 const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
+const defaultRole = process.env.DEFAULT_ROLE || "student";
+const allowSelfAssignRoles = (process.env.ALLOW_SELF_ASSIGN_ROLES || "")
+  .split(",")
+  .map((role) => role.trim())
+  .filter(Boolean);
 
 if (process.env.NODE_ENV === "production" && sessionSecret === "dev-session-secret") {
   console.warn("SESSION_SECRET is not set; using insecure default");
@@ -40,6 +49,7 @@ app.use(
   session({
     name: "femt_session",
     secret: sessionSecret,
+    proxy: true,
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -83,16 +93,22 @@ app.post("/api/auth/register", async (req, res, next) => {
     const firstName = String(req.body.firstName || "").trim();
     const lastName = String(req.body.lastName || "").trim();
     const organization = String(req.body.organization || "").trim();
+    const requestedRole = String(req.body.role || "").trim();
     if (!email || !password) {
       return res.status(400).json({ error: "email and password are required" });
     }
-    await createKeycloakUser({
+    const userId = await createKeycloakUser({
       email,
       password,
       firstName: firstName || undefined,
       lastName: lastName || undefined,
       organization: organization || undefined,
     });
+    const assignedRole =
+      requestedRole && allowSelfAssignRoles.includes(requestedRole) ? requestedRole : defaultRole;
+    if (assignedRole) {
+      await assignRealmRoleToUser(userId, assignedRole);
+    }
     const tokens = await exchangePasswordToken(email, password);
     const authContext = await verifyAccessToken(tokens.access_token);
     req.session.accessToken = tokens.access_token;
@@ -104,6 +120,7 @@ app.post("/api/auth/register", async (req, res, next) => {
       user: authContext.user,
       roles: authContext.roles,
       orgIds: authContext.orgIds || [],
+      assignedRole,
     });
   } catch (err) {
     next(err);

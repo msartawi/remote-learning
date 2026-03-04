@@ -36,6 +36,7 @@ type RegisterPayload = {
   firstName?: string
   lastName?: string
   organization?: string
+  role?: string
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)

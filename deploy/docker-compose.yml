@@ -62,7 +62,9 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: "${KEYCLOAK_ADMIN_PASSWORD:-}"
       SESSION_SECRET: "${SESSION_SECRET:-}"
       COOKIE_DOMAIN: "${COOKIE_DOMAIN:-}"
-      COOKIE_SECURE: "${COOKIE_SECURE:-true}"
+      COOKIE_SECURE: "${COOKIE_SECURE:-auto}"
+      DEFAULT_ROLE: "${DEFAULT_ROLE:-student}"
+      ALLOW_SELF_ASSIGN_ROLES: "${ALLOW_SELF_ASSIGN_ROLES:-}"
       AUTO_MIGRATE: "true"
     depends_on:
       - postgres

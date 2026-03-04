@@ -64,6 +64,12 @@ type TokenResponse = {
   token_type?: string;
 };
 
+type RealmRole = {
+  id: string;
+  name: string;
+  description?: string;
+};
+
 const publicPaths = new Set([
   "/api/health",
   "/api/auth/login",
@@ -187,6 +193,49 @@ export async function createKeycloakUser(payload: {
   }
 
   return userId;
+}
+
+async function getRealmRole(roleName: string, token: string) {
+  if (!keycloakBaseUrl || !keycloakRealm) {
+    throw new Error("Keycloak base URL or realm is missing");
+  }
+  const roleResponse = await fetch(
+    `${keycloakBaseUrl}/admin/realms/${keycloakRealm}/roles/${encodeURIComponent(roleName)}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+  if (!roleResponse.ok) {
+    const text = await roleResponse.text();
+    throw new Error(text || `Failed to fetch role (${roleResponse.status})`);
+  }
+  return (await roleResponse.json()) as RealmRole;
+}
+
+export async function assignRealmRoleToUser(userId: string, roleName: string) {
+  if (!keycloakBaseUrl || !keycloakRealm) {
+    throw new Error("Keycloak base URL or realm is missing");
+  }
+  const token = await getAdminToken();
+  const role = await getRealmRole(roleName, token);
+  const response = await fetch(
+    `${keycloakBaseUrl}/admin/realms/${keycloakRealm}/users/${userId}/role-mappings/realm`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify([{ id: role.id, name: role.name }]),
+    }
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Failed to assign role (${response.status})`);
+  }
 }
 
 export async function verifyAccessToken(token: string): Promise<AuthContext> {

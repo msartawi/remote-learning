@@ -21,6 +21,7 @@ The app will start on the default Vite port (usually `http://localhost:5173`).
 - Configure environment variables in `frontend/.env` (see `.env.example`).
 - Ensure the Keycloak realm allows **Direct Access Grants** for the frontend client.
 - Backend API should be reachable at `VITE_API_BASE_URL` (default `/api`).
+- Registration assigns a default role unless self-assign is enabled on the backend.
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

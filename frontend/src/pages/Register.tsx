@@ -11,6 +11,7 @@ function Register() {
   const [lastName, setLastName] = useState('')
   const [organization, setOrganization] = useState('')
   const [password, setPassword] = useState('')
+  const [role, setRole] = useState('student')
   const [error, setError] = useState('')
   const { register, ready, isAuthenticated } = useAuth()
   const navigate = useNavigate()
@@ -31,6 +32,7 @@ function Register() {
         firstName,
         lastName,
         organization,
+        role,
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed')
@@ -90,6 +92,21 @@ function Register() {
             className={inputClass}
           />
         </label>
+        <label className="text-sm text-slate-300">
+          Role
+          <select
+            value={role}
+            onChange={(event) => setRole(event.target.value)}
+            className={inputClass}
+          >
+            <option value="student">Student</option>
+            <option value="teacher">Teacher</option>
+            <option value="org_admin">Org admin</option>
+          </select>
+        </label>
+        <p className="text-xs text-slate-500">
+          Roles may require approval. If self-assign is disabled, you will default to student.
+        </p>
         <label className="text-sm text-slate-300">
           Password
           <input
