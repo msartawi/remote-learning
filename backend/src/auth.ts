@@ -22,6 +22,9 @@ const audience = process.env.KEYCLOAK_AUDIENCE;
 const jwks = jwksUrl ? createRemoteJWKSet(new URL(jwksUrl)) : null;
 
 export async function authenticate(req: Request, _res: Response, next: NextFunction) {
+  if (req.path === "/api/health") {
+    return next();
+  }
   if (!authRequired) {
     const devRoles = (req.header("x-dev-roles") || "")
       .split(",")
