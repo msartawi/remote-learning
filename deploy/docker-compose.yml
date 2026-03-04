@@ -1,0 +1,99 @@
+services:
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: femt-nginx
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      DOMAIN: "${DOMAIN}"
+      DOMAIN_WWW: "${DOMAIN_WWW}"
+      FRONTEND_UPSTREAM: "${FRONTEND_UPSTREAM}"
+      BACKEND_UPSTREAM: "${BACKEND_UPSTREAM}"
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ./nginx/docker-entrypoint.d:/docker-entrypoint.d:ro
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+    depends_on:
+      - frontend
+      - backend
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: femt-certbot
+    volumes:
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+    entrypoint: ""
+
+  frontend:
+    image: nginx:1.25-alpine
+    container_name: femt-frontend
+    volumes:
+      - ./placeholders/frontend:/usr/share/nginx/html:ro
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: femt-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgres://femt:femt@postgres:5432/femt"
+      PORT: "3001"
+      AUTH_REQUIRED: "${AUTH_REQUIRED:-false}"
+      KEYCLOAK_ISSUER: "${KEYCLOAK_ISSUER:-}"
+      KEYCLOAK_JWKS_URL: "${KEYCLOAK_JWKS_URL:-}"
+      KEYCLOAK_AUDIENCE: "${KEYCLOAK_AUDIENCE:-}"
+      AUTO_MIGRATE: "true"
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: femt-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: femt
+      POSTGRES_USER: femt
+      POSTGRES_PASSWORD: femt
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  keycloak-db:
+    image: postgres:16-alpine
+    container_name: femt-keycloak-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: "${KEYCLOAK_DB_PASSWORD}"
+    volumes:
+      - keycloak_data:/var/lib/postgresql/data
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: femt-keycloak
+    restart: unless-stopped
+    command:
+      - start
+      - --http-enabled=true
+      - --hostname=auth.femt.llc
+    environment:
+      KEYCLOAK_ADMIN: "${KEYCLOAK_ADMIN}"
+      KEYCLOAK_ADMIN_PASSWORD: "${KEYCLOAK_ADMIN_PASSWORD}"
+      KC_PROXY_HEADERS: xforwarded
+      KC_DB: postgres
+      KC_DB_URL: "jdbc:postgresql://keycloak-db:5432/keycloak"
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: "${KEYCLOAK_DB_PASSWORD}"
+    ports:
+      - "127.0.0.1:8085:8080"
+    depends_on:
+      - keycloak-db
+
+volumes:
+  postgres_data:
+  keycloak_data:
