@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  body {
+    @apply min-h-screen bg-slate-950 text-slate-100 antialiased;
+  }
+
+  a {
+    @apply text-slate-100;
+  }
+}
+
+@layer utilities {
+  .glass-panel {
+    @apply rounded-2xl border border-slate-800/70 bg-slate-900/70 shadow-xl shadow-slate-950/40 backdrop-blur;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-2 rounded-full border border-slate-700/60 bg-slate-900/70 px-3 py-1 text-xs font-medium text-slate-200;
+  }
+}

@@ -29,10 +29,17 @@ services:
     entrypoint: ""
 
   frontend:
-    image: nginx:1.25-alpine
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: "${VITE_API_BASE_URL:-/api}"
+        VITE_KEYCLOAK_URL: "${VITE_KEYCLOAK_URL:-}"
+        VITE_KEYCLOAK_REALM: "${VITE_KEYCLOAK_REALM:-femt}"
+        VITE_KEYCLOAK_CLIENT_ID: "${VITE_KEYCLOAK_CLIENT_ID:-femt-frontend}"
+    image: femt-frontend
     container_name: femt-frontend
-    volumes:
-      - ./placeholders/frontend:/usr/share/nginx/html:ro
+    restart: unless-stopped
 
   backend:
     build:

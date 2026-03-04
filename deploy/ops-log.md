@@ -25,3 +25,7 @@
 - Temporarily disabled audience check in backend (`KEYCLOAK_AUDIENCE=`) for testing.
 - Configured SMTP for master and femt realms.
 - Created permanent admin user and re-enabled audience check.
+- Sent SMTP test email to `sartawi@femt.llc`.
+- Added React frontend (login/register/dashboard/session) with Keycloak integration and role-aware UI.
+- Built frontend into Docker image and wired build-time VITE_* config in `deploy/docker-compose.yml`.
+- Enforced role-based access checks on API endpoints and admin UI routes.

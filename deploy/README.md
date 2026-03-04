@@ -45,7 +45,17 @@ If you prefer manual control:
 
 ## Placeholders
 
-The `frontend` container serves a placeholder page. The backend container now runs the org storage mode service (Node.js + Postgres).
+The `frontend` container now builds and serves the React app. The backend container runs the org storage mode service (Node.js + Postgres).
+
+### Frontend build variables
+
+The frontend is built into a static Nginx image during `docker compose up`.
+Set these in `deploy/.env` if you need different values:
+
+- `VITE_API_BASE_URL` (default `/api`)
+- `VITE_KEYCLOAK_URL` (example `https://auth.femt.llc`)
+- `VITE_KEYCLOAK_REALM` (example `femt`)
+- `VITE_KEYCLOAK_CLIENT_ID` (example `femt-frontend`)
 
 ## Ports used
 

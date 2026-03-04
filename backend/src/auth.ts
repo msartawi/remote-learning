@@ -3,6 +3,7 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 
 type AuthContext = {
   roles: string[];
+  orgIds?: string[];
 };
 
 declare global {
@@ -26,7 +27,11 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       .split(",")
       .map((r) => r.trim())
       .filter(Boolean);
-    req.auth = { roles: devRoles };
+    const devOrgIds = (req.header("x-dev-org-ids") || "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
+    req.auth = { roles: devRoles, orgIds: devOrgIds };
     return next();
   }
 
@@ -48,7 +53,17 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
     const roles = Array.isArray((payload as any)?.realm_access?.roles)
       ? (payload as any).realm_access.roles
       : [];
-    req.auth = { roles };
+    const rawOrgIds = (payload as any)?.org_ids ?? (payload as any)?.orgs ?? [];
+    const orgIds: string[] = [];
+    if (Array.isArray(rawOrgIds)) {
+      orgIds.push(...rawOrgIds.map((id) => String(id)));
+    } else if (typeof rawOrgIds === "string") {
+      orgIds.push(rawOrgIds);
+    }
+    if (typeof (payload as any)?.org_id === "string") {
+      orgIds.push((payload as any).org_id);
+    }
+    req.auth = { roles, orgIds: Array.from(new Set(orgIds)) };
     return next();
   } catch (err) {
     return next(err);

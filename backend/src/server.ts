@@ -34,20 +34,55 @@ type RoomRow = {
   storage_mode_override: StorageMode | null;
 };
 
+function isOrgAllowed(req: express.Request, orgId: string) {
+  const roles = req.auth?.roles || [];
+  if (roles.includes("org_admin")) return true;
+  const orgIds = req.auth?.orgIds;
+  if (!orgIds || orgIds.length === 0) return true;
+  return orgIds.includes(orgId);
+}
+
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/orgs", async (_req, res, next) => {
+app.get("/api/orgs", requireAnyRole(["org_admin", "teacher", "student"]), async (req, res, next) => {
   try {
-    const result = await query<OrgRow>(
-      "SELECT id, name, default_storage_mode, allow_room_override FROM orgs ORDER BY created_at DESC"
-    );
+    const roles = req.auth?.roles || [];
+    const orgIds = req.auth?.orgIds || [];
+    const shouldFilter = !roles.includes("org_admin") && orgIds.length > 0;
+    const result = shouldFilter
+      ? await query<OrgRow>(
+          "SELECT id, name, default_storage_mode, allow_room_override FROM orgs WHERE id = ANY($1::uuid[]) ORDER BY created_at DESC",
+          [orgIds]
+        )
+      : await query<OrgRow>(
+          "SELECT id, name, default_storage_mode, allow_room_override FROM orgs ORDER BY created_at DESC"
+        );
     res.json(result.rows);
   } catch (err) {
     next(err);
   }
 });
+
+app.get(
+  "/api/orgs/:orgId/rooms",
+  requireAnyRole(["org_admin", "teacher", "student"]),
+  async (req, res, next) => {
+  try {
+    if (!isOrgAllowed(req, req.params.orgId)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    const result = await query<RoomRow>(
+      "SELECT id, org_id, name, storage_mode_override FROM rooms WHERE org_id = $1 ORDER BY created_at DESC",
+      [req.params.orgId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    next(err);
+  }
+  }
+);
 
 app.post("/api/orgs", requireAnyRole(["org_admin"]), async (req, res, next) => {
   try {
@@ -66,8 +101,11 @@ app.post("/api/orgs", requireAnyRole(["org_admin"]), async (req, res, next) => {
   }
 });
 
-app.get("/api/orgs/:orgId/settings", async (req, res, next) => {
+app.get("/api/orgs/:orgId/settings", requireAnyRole(["org_admin", "teacher"]), async (req, res, next) => {
   try {
+    if (!isOrgAllowed(req, req.params.orgId)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
     const result = await query<OrgRow>(
       "SELECT id, name, default_storage_mode, allow_room_override FROM orgs WHERE id = $1",
       [req.params.orgId]
@@ -81,6 +119,9 @@ app.get("/api/orgs/:orgId/settings", async (req, res, next) => {
 
 app.put("/api/orgs/:orgId/settings", requireAnyRole(["org_admin"]), async (req, res, next) => {
   try {
+    if (!isOrgAllowed(req, req.params.orgId)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
     const defaultMode = normalizeStorageMode(req.body.default_storage_mode);
     const allowRoomOverride =
       req.body.allow_room_override === "true" || req.body.allow_room_override === true;
@@ -98,7 +139,10 @@ app.put("/api/orgs/:orgId/settings", requireAnyRole(["org_admin"]), async (req, 
   }
 });
 
-app.get("/api/rooms/:roomId/settings", async (req, res, next) => {
+app.get(
+  "/api/rooms/:roomId/settings",
+  requireAnyRole(["org_admin", "teacher", "student"]),
+  async (req, res, next) => {
   try {
     const result = await query<RoomRow>(
       "SELECT id, org_id, name, storage_mode_override FROM rooms WHERE id = $1",
@@ -106,6 +150,9 @@ app.get("/api/rooms/:roomId/settings", async (req, res, next) => {
     );
     if (result.rows.length === 0) return res.status(404).json({ error: "room not found" });
     const room = result.rows[0];
+    if (!isOrgAllowed(req, room.org_id)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
     const orgResult = await query<OrgRow>(
       "SELECT default_storage_mode, allow_room_override FROM orgs WHERE id = $1",
       [room.org_id]
@@ -122,10 +169,14 @@ app.get("/api/rooms/:roomId/settings", async (req, res, next) => {
   } catch (err) {
     next(err);
   }
-});
+  }
+);
 
 app.post("/api/orgs/:orgId/rooms", requireAnyRole(["org_admin", "teacher"]), async (req, res, next) => {
   try {
+    if (!isOrgAllowed(req, req.params.orgId)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
     const name = String(req.body.name || "").trim();
     const override = normalizeStorageMode(req.body.storage_mode_override);
     if (!name) return res.status(400).json({ error: "name is required" });
@@ -155,6 +206,9 @@ app.put("/api/rooms/:roomId/settings", requireAnyRole(["org_admin", "teacher"]),
       [req.params.roomId]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: "room not found" });
+    if (!isOrgAllowed(req, result.rows[0].org_id)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
     const orgResult = await query<OrgRow>(
       "SELECT allow_room_override FROM orgs WHERE id = $1",
       [result.rows[0].org_id]
@@ -174,11 +228,11 @@ app.put("/api/rooms/:roomId/settings", requireAnyRole(["org_admin", "teacher"]),
 });
 
 // Admin UI (minimal, server-rendered)
-app.get("/admin", (_req, res) => {
+app.get("/admin", requireAnyRole(["org_admin"]), (_req, res) => {
   res.redirect("/admin/orgs");
 });
 
-app.get("/admin/orgs", async (_req, res, next) => {
+app.get("/admin/orgs", requireAnyRole(["org_admin"]), async (_req, res, next) => {
   try {
     const orgs = await query<OrgRow>(
       "SELECT id, name, default_storage_mode, allow_room_override FROM orgs ORDER BY created_at DESC"
@@ -189,7 +243,7 @@ app.get("/admin/orgs", async (_req, res, next) => {
   }
 });
 
-app.post("/admin/orgs", async (req, res, next) => {
+app.post("/admin/orgs", requireAnyRole(["org_admin"]), async (req, res, next) => {
   try {
     const name = String(req.body.name || "").trim();
     const defaultMode = normalizeStorageMode(req.body.default_storage_mode);
@@ -206,7 +260,7 @@ app.post("/admin/orgs", async (req, res, next) => {
   }
 });
 
-app.get("/admin/orgs/:orgId", async (req, res, next) => {
+app.get("/admin/orgs/:orgId", requireAnyRole(["org_admin"]), async (req, res, next) => {
   try {
     const orgResult = await query<OrgRow>(
       "SELECT id, name, default_storage_mode, allow_room_override FROM orgs WHERE id = $1",
@@ -223,7 +277,7 @@ app.get("/admin/orgs/:orgId", async (req, res, next) => {
   }
 });
 
-app.post("/admin/orgs/:orgId/settings", async (req, res, next) => {
+app.post("/admin/orgs/:orgId/settings", requireAnyRole(["org_admin"]), async (req, res, next) => {
   try {
     const defaultMode = normalizeStorageMode(req.body.default_storage_mode);
     const allowRoomOverride = req.body.allow_room_override === "on";
@@ -238,7 +292,7 @@ app.post("/admin/orgs/:orgId/settings", async (req, res, next) => {
   }
 });
 
-app.post("/admin/orgs/:orgId/rooms", async (req, res, next) => {
+app.post("/admin/orgs/:orgId/rooms", requireAnyRole(["org_admin"]), async (req, res, next) => {
   try {
     const name = String(req.body.name || "").trim();
     const override = normalizeStorageMode(req.body.storage_mode_override);
@@ -253,7 +307,7 @@ app.post("/admin/orgs/:orgId/rooms", async (req, res, next) => {
   }
 });
 
-app.post("/admin/rooms/:roomId/override", async (req, res, next) => {
+app.post("/admin/rooms/:roomId/override", requireAnyRole(["org_admin"]), async (req, res, next) => {
   try {
     const override = normalizeStorageMode(req.body.storage_mode_override);
     const room = await query<RoomRow>(

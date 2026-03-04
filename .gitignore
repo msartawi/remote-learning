@@ -1,0 +1,12 @@
+node_modules/
+dist/
+frontend/node_modules/
+frontend/dist/
+backend/node_modules/
+backend/dist/
+**/.env
+**/.env.local
+**/.env.*.local
+deploy/certbot/
+deploy/postgres_data/
+deploy/keycloak_data/
