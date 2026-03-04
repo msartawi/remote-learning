@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
 const inputClass =
@@ -10,17 +10,31 @@ function Register() {
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [organization, setOrganization] = useState('')
-  const { registerWithPrefill } = useAuth()
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const { register, ready, isAuthenticated } = useAuth()
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (ready && isAuthenticated) {
+      navigate('/dashboard', { replace: true })
+    }
+  }, [ready, isAuthenticated, navigate])
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
-    await registerWithPrefill({
-      email,
-      firstName,
-      lastName,
-      organization,
-      redirectUri: `${window.location.origin}/dashboard`,
-    })
+    setError('')
+    try {
+      await register({
+        email,
+        password,
+        firstName,
+        lastName,
+        organization,
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Registration failed')
+    }
   }
 
   return (
@@ -29,9 +43,11 @@ function Register() {
       <p className="mt-2 text-sm text-slate-400">
         Register an organization or join an existing workspace.
       </p>
-      <p className="mt-3 text-xs text-slate-500">
-        Registration completes in Keycloak. Make sure registration is enabled in the realm.
-      </p>
+      {error ? (
+        <div className="mt-4 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-xs text-rose-100">
+          {error}
+        </div>
+      ) : null}
 
       <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
         <label className="text-sm text-slate-300">
@@ -76,14 +92,20 @@ function Register() {
         </label>
         <label className="text-sm text-slate-300">
           Password
-          <input type="password" placeholder="Create a secure password" className={inputClass} />
+          <input
+            type="password"
+            placeholder="Create a secure password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            className={inputClass}
+          />
         </label>
 
         <button
           type="submit"
           className="w-full rounded-xl bg-indigo-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-indigo-300"
         >
-          Continue to secure registration
+          Create account
         </button>
       </form>
 

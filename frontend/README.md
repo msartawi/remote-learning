@@ -12,16 +12,15 @@ The app will start on the default Vite port (usually `http://localhost:5173`).
 
 ## Pages
 
-- `/login` and `/register`: Auth UI that redirects to Keycloak.
+- `/login` and `/register`: Custom auth UI (no redirect) backed by `/api/auth/*`.
 - `/dashboard`: Org + room overview powered by `/api/orgs` and `/api/orgs/:orgId/rooms`.
 - `/session/:id`: Session UI shell for A/V + collaboration tools.
 
 ## Next integration steps
 
 - Configure environment variables in `frontend/.env` (see `.env.example`).
-- Ensure the Keycloak realm allows registration if you want `/register` to work.
+- Ensure the Keycloak realm allows **Direct Access Grants** for the frontend client.
 - Backend API should be reachable at `VITE_API_BASE_URL` (default `/api`).
-- Login/Register redirect to Keycloak for secure authentication.
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

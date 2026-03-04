@@ -5,7 +5,14 @@ import morgan from "morgan";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { authenticate, requireAnyRole } from "./auth.js";
+import session from "express-session";
+import {
+  authenticate,
+  createKeycloakUser,
+  exchangePasswordToken,
+  requireAnyRole,
+  verifyAccessToken,
+} from "./auth.js";
 import { query } from "./db.js";
 import { STORAGE_MODES, normalizeStorageMode, type StorageMode } from "./storageModes.js";
 
@@ -13,12 +20,114 @@ const app = express();
 const port = Number(process.env.PORT || 3001);
 const autoMigrate = process.env.AUTO_MIGRATE === "true";
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const sessionSecret = process.env.SESSION_SECRET || "dev-session-secret";
+const cookieSecure =
+  process.env.COOKIE_SECURE !== undefined
+    ? process.env.COOKIE_SECURE === "true"
+    : process.env.NODE_ENV === "production";
+const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
+
+if (process.env.NODE_ENV === "production" && sessionSecret === "dev-session-secret") {
+  console.warn("SESSION_SECRET is not set; using insecure default");
+}
 
 app.use(cors());
 app.use(morgan("dev"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.set("trust proxy", 1);
+app.use(
+  session({
+    name: "femt_session",
+    secret: sessionSecret,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: cookieSecure,
+      domain: cookieDomain,
+      maxAge: 1000 * 60 * 60 * 8,
+    },
+  })
+);
+
+app.post("/api/auth/login", async (req, res, next) => {
+  try {
+    const email = String(req.body.email || "").trim();
+    const password = String(req.body.password || "");
+    if (!email || !password) {
+      return res.status(400).json({ error: "email and password are required" });
+    }
+    const tokens = await exchangePasswordToken(email, password);
+    const authContext = await verifyAccessToken(tokens.access_token);
+    req.session.accessToken = tokens.access_token;
+    req.session.refreshToken = tokens.refresh_token;
+    req.session.user = authContext.user;
+    req.session.roles = authContext.roles;
+    req.session.orgIds = authContext.orgIds;
+    res.json({
+      user: authContext.user,
+      roles: authContext.roles,
+      orgIds: authContext.orgIds || [],
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post("/api/auth/register", async (req, res, next) => {
+  try {
+    const email = String(req.body.email || "").trim();
+    const password = String(req.body.password || "");
+    const firstName = String(req.body.firstName || "").trim();
+    const lastName = String(req.body.lastName || "").trim();
+    const organization = String(req.body.organization || "").trim();
+    if (!email || !password) {
+      return res.status(400).json({ error: "email and password are required" });
+    }
+    await createKeycloakUser({
+      email,
+      password,
+      firstName: firstName || undefined,
+      lastName: lastName || undefined,
+      organization: organization || undefined,
+    });
+    const tokens = await exchangePasswordToken(email, password);
+    const authContext = await verifyAccessToken(tokens.access_token);
+    req.session.accessToken = tokens.access_token;
+    req.session.refreshToken = tokens.refresh_token;
+    req.session.user = authContext.user;
+    req.session.roles = authContext.roles;
+    req.session.orgIds = authContext.orgIds;
+    res.status(201).json({
+      user: authContext.user,
+      roles: authContext.roles,
+      orgIds: authContext.orgIds || [],
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  req.session.destroy(() => {
+    res.json({ ok: true });
+  });
+});
+
 app.use(authenticate);
+
+app.get("/api/auth/me", (req, res) => {
+  if (!req.auth) {
+    return res.status(401).json({ error: "Unauthenticated" });
+  }
+  res.json({
+    user: req.auth.user,
+    roles: req.auth.roles,
+    orgIds: req.auth.orgIds || [],
+  });
+});
 
 type OrgRow = {
   id: string;

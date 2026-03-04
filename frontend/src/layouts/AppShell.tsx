@@ -10,11 +10,11 @@ const navItems = [
 ]
 
 function AppShell() {
-  const { profile, logout, roles } = useAuth()
-  const displayName = profile?.firstName
-    ? `${profile.firstName} ${profile.lastName ?? ''}`.trim()
-    : profile?.username ?? 'Org Admin'
-  const displayEmail = profile?.email ?? 'unknown@femt.llc'
+  const { user, logout, roles } = useAuth()
+  const displayName = user?.firstName
+    ? `${user.firstName} ${user.lastName ?? ''}`.trim()
+    : user?.username ?? 'Org Admin'
+  const displayEmail = user?.email ?? 'unknown@femt.llc'
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">

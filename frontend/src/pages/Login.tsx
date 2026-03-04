@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
 const inputClass =
@@ -7,9 +7,10 @@ const inputClass =
 
 function Login() {
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
   const { login, ready, isAuthenticated } = useAuth()
   const navigate = useNavigate()
-  const location = useLocation()
 
   useEffect(() => {
     if (ready && isAuthenticated) {
@@ -19,10 +20,13 @@ function Login() {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
-    await login({
-      loginHint: email || undefined,
-      redirectUri: `${window.location.origin}${(location.state as { from?: string })?.from ?? '/dashboard'}`,
-    })
+    setError('')
+    try {
+      await login(email, password)
+      navigate('/dashboard', { replace: true })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed')
+    }
   }
 
   return (
@@ -31,9 +35,11 @@ function Login() {
       <p className="mt-2 text-sm text-slate-400">
         Sign in to manage sessions, rooms, and organization settings.
       </p>
-      <p className="mt-3 text-xs text-slate-500">
-        You will be redirected to the secure Keycloak login to finish authentication.
-      </p>
+      {error ? (
+        <div className="mt-4 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-xs text-rose-100">
+          {error}
+        </div>
+      ) : null}
 
       <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
         <label className="text-sm text-slate-300">
@@ -48,7 +54,13 @@ function Login() {
         </label>
         <label className="text-sm text-slate-300">
           Password
-          <input type="password" placeholder="••••••••" className={inputClass} />
+          <input
+            type="password"
+            placeholder="••••••••"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            className={inputClass}
+          />
         </label>
 
         <div className="flex items-center justify-between text-xs text-slate-400">
@@ -65,7 +77,7 @@ function Login() {
           type="submit"
           className="w-full rounded-xl bg-emerald-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300"
         >
-          Continue to secure sign-in
+          Sign in
         </button>
       </form>
 
