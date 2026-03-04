@@ -23,3 +23,5 @@
 - Created `femt` realm, `femt-api` client, and realm roles (org_admin/teacher/student).
 - Created test user `api-admin` and verified API auth end-to-end.
 - Temporarily disabled audience check in backend (`KEYCLOAK_AUDIENCE=`) for testing.
+- Configured SMTP for master and femt realms.
+- Created permanent admin user and re-enabled audience check.
