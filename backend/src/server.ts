@@ -31,7 +31,7 @@ if (process.env.NODE_ENV === "production" && sessionSecret === "dev-session-secr
   console.warn("SESSION_SECRET is not set; using insecure default");
 }
 
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(morgan("dev"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
