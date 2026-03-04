@@ -29,3 +29,7 @@
 - Added React frontend (login/register/dashboard/session) with Keycloak integration and role-aware UI.
 - Built frontend into Docker image and wired build-time VITE_* config in `deploy/docker-compose.yml`.
 - Enforced role-based access checks on API endpoints and admin UI routes.
+- Implemented backend session auth proxy with custom login/register and Keycloak admin user creation.
+- Enabled Direct Access Grants on `femt-frontend` client and added `femt-api` audience mapper.
+- Adjusted nginx to pass upstream `X-Forwarded-Proto` and restored config generator executable.
+- Set `COOKIE_SECURE=false` on server to allow session cookies behind Apache TLS termination.
