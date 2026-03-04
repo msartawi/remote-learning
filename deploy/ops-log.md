@@ -33,3 +33,5 @@
 - Enabled Direct Access Grants on `femt-frontend` client and added `femt-api` audience mapper.
 - Adjusted nginx to pass upstream `X-Forwarded-Proto` and restored config generator executable.
 - Set `COOKIE_SECURE=false` on server to allow session cookies behind Apache TLS termination.
+- Added registration role assignment (default role + optional self-assign list) and role selector UI.
+- Hardened proxy headers (Apache + Nginx) so secure session cookies can be enabled again.
