@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { API_BASE_URL, KEYCLOAK_URL } from '../config'
 import { useAuth } from '../auth/AuthContext'
-import { createOrg, createRoom, getOrgRooms, getOrgs } from '../data/orgApi'
+import {
+  createOrg,
+  createOrgInvite,
+  createRoom,
+  getOrgInvites,
+  getOrgRooms,
+  getOrgs,
+  redeemInvite,
+} from '../data/orgApi'
 import type { Org, StorageMode } from '../types'
 
 const storageOptions: StorageMode[] = ['metadata_only', 'encrypted_blobs', 'fully_p2p']
@@ -19,9 +27,15 @@ function Dashboard() {
   const [orgName, setOrgName] = useState('')
   const [orgMode, setOrgMode] = useState<StorageMode>('metadata_only')
   const [roomDrafts, setRoomDrafts] = useState<Record<string, { name: string; mode: string }>>({})
+  const [inviteCode, setInviteCode] = useState('')
+  const [inviteDrafts, setInviteDrafts] = useState<
+    Record<string, { role: 'student' | 'teacher' | 'org_admin'; expires: number; maxUses: number }>
+  >({})
+  const [inviteLists, setInviteLists] = useState<Record<string, { code: string; role: string }[]>>({})
   const { authFetch, hasAnyRole, hasRole, roles } = useAuth()
   const canCreateOrg = hasAnyRole(['org_admin'])
   const canCreateRoom = hasAnyRole(['org_admin', 'teacher'])
+  const canManageInvites = hasAnyRole(['org_admin', 'teacher'])
   const isStudentOnly = hasRole('student') && !hasAnyRole(['org_admin', 'teacher'])
   const isTeacher = hasRole('teacher')
   const keycloakAdminUrl = `${KEYCLOAK_URL}/admin/master/console/`
@@ -44,6 +58,23 @@ function Dashboard() {
       active = false
     }
   }, [authFetch])
+
+  useEffect(() => {
+    if (!canManageInvites) return
+    orgs.forEach((org) => {
+      if (inviteLists[org.id]) return
+      getOrgInvites(authFetch, API_BASE_URL, org.id)
+        .then((invites) => {
+          setInviteLists((prev) => ({
+            ...prev,
+            [org.id]: invites.map((invite) => ({ code: invite.code, role: invite.role })),
+          }))
+        })
+        .catch(() => {
+          // ignore invite-list fetch errors in initial render
+        })
+    })
+  }, [orgs, canManageInvites, inviteLists, authFetch])
 
   const totalRooms = useMemo(
     () => orgs.reduce((count, org) => count + org.rooms.length, 0),
@@ -82,6 +113,50 @@ function Dashboard() {
   const updateRoomDraft = (orgId: string, patch: Partial<{ name: string; mode: string }>) => {
     setRoomDrafts((prev) => {
       const current = prev[orgId] ?? { name: '', mode: '' }
+      return {
+        ...prev,
+        [orgId]: { ...current, ...patch },
+      }
+    })
+  }
+
+  const handleRedeemInvite = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!inviteCode.trim()) return
+    try {
+      await redeemInvite(authFetch, API_BASE_URL, inviteCode.trim())
+      const data = await getOrgs(authFetch, API_BASE_URL)
+      setOrgs(data)
+      setInviteCode('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to redeem invite')
+    }
+  }
+
+  const handleCreateInvite = async (orgId: string, event: FormEvent) => {
+    event.preventDefault()
+    const draft = inviteDrafts[orgId] ?? { role: 'student', expires: 7, maxUses: 1 }
+    try {
+      const created = await createOrgInvite(authFetch, API_BASE_URL, orgId, {
+        role: draft.role,
+        expires_in_days: draft.expires,
+        max_uses: draft.maxUses,
+      })
+      setInviteLists((prev) => ({
+        ...prev,
+        [orgId]: [{ code: created.code, role: created.role }, ...(prev[orgId] ?? [])].slice(0, 10),
+      }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create invite')
+    }
+  }
+
+  const updateInviteDraft = (
+    orgId: string,
+    patch: Partial<{ role: 'student' | 'teacher' | 'org_admin'; expires: number; maxUses: number }>
+  ) => {
+    setInviteDrafts((prev) => {
+      const current = prev[orgId] ?? { role: 'student', expires: 7, maxUses: 1 }
       return {
         ...prev,
         [orgId]: { ...current, ...patch },
@@ -202,6 +277,30 @@ function Dashboard() {
         </section>
       ) : null}
 
+      <section className="glass-panel p-6">
+        <h2 className="text-lg font-semibold text-white">Join organization with invite</h2>
+        <p className="mt-2 text-sm text-slate-400">
+          Paste an invite code from your teacher or org admin to join their organization.
+        </p>
+        <form className="mt-4 flex flex-wrap items-end gap-3" onSubmit={handleRedeemInvite}>
+          <label className="text-sm text-slate-300">
+            Invite code
+            <input
+              value={inviteCode}
+              onChange={(event) => setInviteCode(event.target.value.toUpperCase())}
+              placeholder="ABCDEF123"
+              className="mt-2 w-60 rounded-lg border border-slate-800/70 bg-slate-900/80 px-4 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-400/60 focus:outline-none focus:ring-2 focus:ring-emerald-400/20"
+            />
+          </label>
+          <button
+            type="submit"
+            className="rounded-lg bg-indigo-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-indigo-300"
+          >
+            Redeem invite
+          </button>
+        </form>
+      </section>
+
       {canCreateOrg ? (
         <section className="glass-panel p-6">
           <h2 className="text-lg font-semibold text-white">Role assignments</h2>
@@ -321,6 +420,69 @@ function Dashboard() {
                     <span className="font-semibold">teacher</span> role to create rooms.
                   </div>
                 )}
+
+                {canManageInvites ? (
+                  <div className="mt-5 space-y-3 rounded-xl border border-dashed border-slate-800/70 bg-slate-900/40 p-4">
+                    <h4 className="text-sm font-semibold text-white">Invite codes</h4>
+                    <form className="grid gap-2 sm:grid-cols-4" onSubmit={(event) => handleCreateInvite(org.id, event)}>
+                      <select
+                        value={(inviteDrafts[org.id] ?? { role: 'student', expires: 7, maxUses: 1 }).role}
+                        onChange={(event) =>
+                          updateInviteDraft(org.id, {
+                            role: event.target.value as 'student' | 'teacher' | 'org_admin',
+                          })
+                        }
+                        className="rounded-lg border border-slate-800/70 bg-slate-900/80 px-3 py-2 text-xs text-slate-100"
+                      >
+                        <option value="student">student</option>
+                        <option value="teacher">teacher</option>
+                        <option value="org_admin">org_admin</option>
+                      </select>
+                      <input
+                        type="number"
+                        min={1}
+                        max={90}
+                        value={(inviteDrafts[org.id] ?? { role: 'student', expires: 7, maxUses: 1 }).expires}
+                        onChange={(event) =>
+                          updateInviteDraft(org.id, { expires: Number(event.target.value || 7) })
+                        }
+                        className="rounded-lg border border-slate-800/70 bg-slate-900/80 px-3 py-2 text-xs text-slate-100"
+                        placeholder="Expires days"
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={(inviteDrafts[org.id] ?? { role: 'student', expires: 7, maxUses: 1 }).maxUses}
+                        onChange={(event) =>
+                          updateInviteDraft(org.id, { maxUses: Number(event.target.value || 1) })
+                        }
+                        className="rounded-lg border border-slate-800/70 bg-slate-900/80 px-3 py-2 text-xs text-slate-100"
+                        placeholder="Max uses"
+                      />
+                      <button
+                        type="submit"
+                        className="rounded-lg bg-indigo-500 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-400"
+                      >
+                        Create invite
+                      </button>
+                    </form>
+                    <div className="space-y-2">
+                      {(inviteLists[org.id] ?? []).slice(0, 5).map((invite) => (
+                        <div
+                          key={invite.code}
+                          className="flex items-center justify-between rounded-lg border border-slate-800/70 bg-slate-950/50 px-3 py-2 text-xs text-slate-300"
+                        >
+                          <span className="font-mono">{invite.code}</span>
+                          <span className="text-slate-400">{invite.role}</span>
+                        </div>
+                      ))}
+                      {(inviteLists[org.id] ?? []).length === 0 ? (
+                        <p className="text-xs text-slate-500">No invites yet.</p>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>

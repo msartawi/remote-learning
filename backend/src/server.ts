@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
+import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -94,8 +95,27 @@ app.post("/api/auth/register", async (req, res, next) => {
     const lastName = String(req.body.lastName || "").trim();
     const organization = String(req.body.organization || "").trim();
     const requestedRole = String(req.body.role || "").trim();
+    const inviteCode = String(req.body.invite_code || req.body.inviteCode || "")
+      .trim()
+      .toUpperCase();
     if (!email || !password) {
       return res.status(400).json({ error: "email and password are required" });
+    }
+    let invite: InviteRow | null = null;
+    if (inviteCode) {
+      const inviteResult = await query<InviteRow>(
+        `SELECT id, org_id, code, role, expires_at, max_uses, uses_count, revoked, created_at
+         FROM org_invites WHERE code = $1`,
+        [inviteCode]
+      );
+      if (inviteResult.rows.length === 0) {
+        return res.status(400).json({ error: "Invalid invite code" });
+      }
+      invite = inviteResult.rows[0];
+      const expired = invite.expires_at ? Date.parse(invite.expires_at) < Date.now() : false;
+      if (invite.revoked || expired || invite.uses_count >= invite.max_uses) {
+        return res.status(400).json({ error: "Invite code is expired or exhausted" });
+      }
     }
     const userId = await createKeycloakUser({
       email,
@@ -104,10 +124,17 @@ app.post("/api/auth/register", async (req, res, next) => {
       lastName: lastName || undefined,
       organization: organization || undefined,
     });
-    const assignedRole =
-      requestedRole && allowSelfAssignRoles.includes(requestedRole) ? requestedRole : defaultRole;
+    const assignedRole = invite
+      ? invite.role
+      : requestedRole && allowSelfAssignRoles.includes(requestedRole)
+        ? requestedRole
+        : defaultRole;
     if (assignedRole) {
       await assignRealmRoleToUser(userId, assignedRole);
+    }
+    if (invite) {
+      await addMembership(invite.org_id, email, invite.role);
+      await query("UPDATE org_invites SET uses_count = uses_count + 1 WHERE id = $1", [invite.id]);
     }
     const tokens = await exchangePasswordToken(email, password);
     const authContext = await verifyAccessToken(tokens.access_token);
@@ -135,6 +162,28 @@ app.post("/api/auth/logout", (req, res) => {
 
 app.use(authenticate);
 
+app.use(async (req, _res, next) => {
+  try {
+    const email = req.auth?.user?.email?.toLowerCase();
+    if (!email) return next();
+    const memberships = await query<MembershipRow>(
+      "SELECT org_id, user_email, role FROM org_memberships WHERE user_email = $1",
+      [email]
+    );
+    if (memberships.rows.length === 0) return next();
+    const membershipOrgIds = memberships.rows.map((membership) => membership.org_id);
+    const membershipRoles = memberships.rows.map((membership) => membership.role);
+    req.auth = {
+      ...req.auth,
+      orgIds: Array.from(new Set([...(req.auth?.orgIds || []), ...membershipOrgIds])),
+      roles: Array.from(new Set([...(req.auth?.roles || []), ...membershipRoles])),
+    };
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+});
+
 app.get("/api/auth/me", (req, res) => {
   if (!req.auth) {
     return res.status(401).json({ error: "Unauthenticated" });
@@ -160,6 +209,43 @@ type RoomRow = {
   storage_mode_override: StorageMode | null;
 };
 
+type MembershipRow = {
+  org_id: string;
+  user_email: string;
+  role: "org_admin" | "teacher" | "student";
+};
+
+type InviteRow = {
+  id: string;
+  org_id: string;
+  code: string;
+  role: "org_admin" | "teacher" | "student";
+  expires_at: string | null;
+  max_uses: number;
+  uses_count: number;
+  revoked: boolean;
+  created_at: string;
+};
+
+type SessionBootstrap = {
+  room_id: string;
+  room_name: string;
+  jitsi_domain: string;
+  jitsi_room_name: string;
+  display_name: string;
+  role: string;
+  can_broadcast: boolean;
+  storage_mode: StorageMode;
+  collab_channels: {
+    chat: boolean;
+    whiteboard: boolean;
+    files: boolean;
+  };
+};
+
+const jitsiDomain = process.env.JITSI_DOMAIN || "meet.jit.si";
+const inviteUrlBase = process.env.INVITE_URL_BASE || process.env.APP_PUBLIC_URL || "";
+
 function isOrgAllowed(req: express.Request, orgId: string) {
   const roles = req.auth?.roles || [];
   if (roles.includes("org_admin")) return true;
@@ -168,9 +254,186 @@ function isOrgAllowed(req: express.Request, orgId: string) {
   return orgIds.includes(orgId);
 }
 
+function normalizeInviteRole(input: unknown): MembershipRow["role"] | null {
+  if (input === "org_admin" || input === "teacher" || input === "student") {
+    return input;
+  }
+  return null;
+}
+
+function generateInviteCode() {
+  return randomBytes(9).toString("base64url").toUpperCase();
+}
+
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+async function addMembership(orgId: string, email: string, role: MembershipRow["role"]) {
+  await query(
+    `INSERT INTO org_memberships (org_id, user_email, role)
+     VALUES ($1, LOWER($2), $3)
+     ON CONFLICT (org_id, user_email)
+     DO UPDATE SET role = EXCLUDED.role`,
+    [orgId, email, role]
+  );
+}
+
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });
+
+app.get("/api/orgs/:orgId/invites", requireAnyRole(["org_admin", "teacher"]), async (req, res, next) => {
+  try {
+    if (!isOrgAllowed(req, req.params.orgId)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    const result = await query<InviteRow>(
+      `SELECT id, org_id, code, role, expires_at, max_uses, uses_count, revoked, created_at
+       FROM org_invites
+       WHERE org_id = $1
+       ORDER BY created_at DESC
+       LIMIT 50`,
+      [req.params.orgId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post("/api/orgs/:orgId/invites", requireAnyRole(["org_admin", "teacher"]), async (req, res, next) => {
+  try {
+    if (!isOrgAllowed(req, req.params.orgId)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    const role = normalizeInviteRole(req.body.role || "student");
+    if (!role) {
+      return res.status(400).json({ error: "Invalid role" });
+    }
+    const expiresInDays = Number(req.body.expires_in_days || 7);
+    const maxUses = Number(req.body.max_uses || 1);
+    if (!Number.isFinite(expiresInDays) || expiresInDays < 1 || expiresInDays > 90) {
+      return res.status(400).json({ error: "expires_in_days must be between 1 and 90" });
+    }
+    if (!Number.isFinite(maxUses) || maxUses < 1 || maxUses > 100) {
+      return res.status(400).json({ error: "max_uses must be between 1 and 100" });
+    }
+    const code = generateInviteCode();
+    const createdBy = req.auth?.user?.email || null;
+    const result = await query<InviteRow>(
+      `INSERT INTO org_invites (org_id, code, role, created_by_email, expires_at, max_uses)
+       VALUES ($1, $2, $3, $4, NOW() + ($5::text || ' days')::interval, $6)
+       RETURNING id, org_id, code, role, expires_at, max_uses, uses_count, revoked, created_at`,
+      [req.params.orgId, code, role, createdBy, String(expiresInDays), maxUses]
+    );
+    const invite = result.rows[0];
+    const redeemUrl = inviteUrlBase ? `${inviteUrlBase}/register?invite=${invite.code}` : null;
+    res.status(201).json({ ...invite, redeem_url: redeemUrl });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post("/api/invites/redeem", requireAnyRole(["org_admin", "teacher", "student"]), async (req, res, next) => {
+  try {
+    const email = req.auth?.user?.email;
+    if (!email) return res.status(400).json({ error: "Authenticated email is required" });
+    const code = String(req.body.code || "").trim().toUpperCase();
+    if (!code) return res.status(400).json({ error: "Invite code is required" });
+    const inviteResult = await query<InviteRow>(
+      `SELECT id, org_id, code, role, expires_at, max_uses, uses_count, revoked, created_at
+       FROM org_invites WHERE code = $1`,
+      [code]
+    );
+    if (inviteResult.rows.length === 0) {
+      return res.status(404).json({ error: "Invite not found" });
+    }
+    const invite = inviteResult.rows[0];
+    const expired = invite.expires_at ? Date.parse(invite.expires_at) < Date.now() : false;
+    if (invite.revoked || expired || invite.uses_count >= invite.max_uses) {
+      return res.status(400).json({ error: "Invite is expired or exhausted" });
+    }
+    await addMembership(invite.org_id, email, invite.role);
+    await query("UPDATE org_invites SET uses_count = uses_count + 1 WHERE id = $1", [invite.id]);
+    res.json({ org_id: invite.org_id, role: invite.role, code: invite.code });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get(
+  "/api/sessions/:roomId/bootstrap",
+  requireAnyRole(["org_admin", "teacher", "student"]),
+  async (req, res, next) => {
+    try {
+      const roomId = req.params.roomId;
+      const isUuid = uuidPattern.test(roomId);
+      let payload: SessionBootstrap;
+
+      if (!isUuid) {
+        const role = req.auth?.roles?.includes("org_admin")
+          ? "org_admin"
+          : req.auth?.roles?.includes("teacher")
+            ? "teacher"
+            : "student";
+        payload = {
+          room_id: roomId,
+          room_name: roomId,
+          jitsi_domain: jitsiDomain,
+          jitsi_room_name: `femt-${roomId}`.replace(/[^a-zA-Z0-9-_]/g, "-"),
+          display_name: req.auth?.user?.name || req.auth?.user?.email || "FEMT User",
+          role,
+          can_broadcast: role === "org_admin" || role === "teacher",
+          storage_mode: "metadata_only",
+          collab_channels: { chat: true, whiteboard: true, files: true },
+        };
+        return res.json(payload);
+      }
+
+      const roomResult = await query<RoomRow>(
+        "SELECT id, org_id, name, storage_mode_override FROM rooms WHERE id = $1",
+        [roomId]
+      );
+      if (roomResult.rows.length === 0) {
+        return res.status(404).json({ error: "room not found" });
+      }
+      const room = roomResult.rows[0];
+      if (!isOrgAllowed(req, room.org_id)) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      const orgResult = await query<OrgRow>(
+        "SELECT default_storage_mode, allow_room_override FROM orgs WHERE id = $1",
+        [room.org_id]
+      );
+      if (orgResult.rows.length === 0) return res.status(404).json({ error: "org not found" });
+      const storageMode = room.storage_mode_override || orgResult.rows[0].default_storage_mode;
+      const role = req.auth?.roles?.includes("org_admin")
+        ? "org_admin"
+        : req.auth?.roles?.includes("teacher")
+          ? "teacher"
+          : "student";
+
+      payload = {
+        room_id: room.id,
+        room_name: room.name,
+        jitsi_domain: jitsiDomain,
+        jitsi_room_name: `femt-${room.id}`,
+        display_name: req.auth?.user?.name || req.auth?.user?.email || "FEMT User",
+        role,
+        can_broadcast: role === "org_admin" || role === "teacher",
+        storage_mode: storageMode,
+        collab_channels: {
+          chat: true,
+          whiteboard: true,
+          files: storageMode !== "fully_p2p",
+        },
+      };
+      return res.json(payload);
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
 
 app.get("/api/orgs", requireAnyRole(["org_admin", "teacher", "student"]), async (req, res, next) => {
   try {

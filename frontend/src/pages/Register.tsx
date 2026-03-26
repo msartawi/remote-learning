@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
 const inputClass =
@@ -12,15 +12,24 @@ function Register() {
   const [organization, setOrganization] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState('student')
+  const [inviteCode, setInviteCode] = useState('')
   const [error, setError] = useState('')
   const { register, ready, isAuthenticated } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
 
   useEffect(() => {
     if (ready && isAuthenticated) {
       navigate('/dashboard', { replace: true })
     }
   }, [ready, isAuthenticated, navigate])
+
+  useEffect(() => {
+    const inviteFromQuery = searchParams.get('invite') || ''
+    if (inviteFromQuery) {
+      setInviteCode(inviteFromQuery.toUpperCase())
+    }
+  }, [searchParams])
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -33,6 +42,7 @@ function Register() {
         lastName,
         organization,
         role,
+        invite_code: inviteCode || undefined,
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed')
@@ -107,6 +117,16 @@ function Register() {
         <p className="text-xs text-slate-500">
           Roles may require approval. If self-assign is disabled, you will default to student.
         </p>
+        <label className="text-sm text-slate-300">
+          Invite code (optional)
+          <input
+            type="text"
+            placeholder="ABCD-EFGH"
+            value={inviteCode}
+            onChange={(event) => setInviteCode(event.target.value.toUpperCase())}
+            className={inputClass}
+          />
+        </label>
         <label className="text-sm text-slate-300">
           Password
           <input

@@ -65,6 +65,8 @@ services:
       COOKIE_SECURE: "${COOKIE_SECURE:-auto}"
       DEFAULT_ROLE: "${DEFAULT_ROLE:-student}"
       ALLOW_SELF_ASSIGN_ROLES: "${ALLOW_SELF_ASSIGN_ROLES:-}"
+      JITSI_DOMAIN: "${JITSI_DOMAIN:-meet.jit.si}"
+      INVITE_URL_BASE: "${INVITE_URL_BASE:-}"
       AUTO_MIGRATE: "true"
     depends_on:
       - postgres

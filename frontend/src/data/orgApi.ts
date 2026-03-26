@@ -1,4 +1,4 @@
-import type { Org, Room, StorageMode } from '../types'
+import type { Org, OrgInvite, Room, SessionBootstrap, StorageMode } from '../types'
 
 export type AuthFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
@@ -62,5 +62,54 @@ export async function createRoom(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, storage_mode_override: override }),
     })
+  )
+}
+
+export async function getOrgInvites(
+  authFetch: AuthFetch,
+  baseUrl: string,
+  orgId: string
+): Promise<OrgInvite[]> {
+  return handleResponse<OrgInvite[]>(
+    await authFetch(`${baseUrl}/orgs/${orgId}/invites`)
+  )
+}
+
+export async function createOrgInvite(
+  authFetch: AuthFetch,
+  baseUrl: string,
+  orgId: string,
+  payload: { role: 'org_admin' | 'teacher' | 'student'; expires_in_days: number; max_uses: number }
+): Promise<OrgInvite> {
+  return handleResponse<OrgInvite>(
+    await authFetch(`${baseUrl}/orgs/${orgId}/invites`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+  )
+}
+
+export async function redeemInvite(
+  authFetch: AuthFetch,
+  baseUrl: string,
+  code: string
+): Promise<{ org_id: string; role: string; code: string }> {
+  return handleResponse<{ org_id: string; role: string; code: string }>(
+    await authFetch(`${baseUrl}/invites/redeem`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    })
+  )
+}
+
+export async function getSessionBootstrap(
+  authFetch: AuthFetch,
+  baseUrl: string,
+  roomId: string
+): Promise<SessionBootstrap> {
+  return handleResponse<SessionBootstrap>(
+    await authFetch(`${baseUrl}/sessions/${encodeURIComponent(roomId)}/bootstrap`)
   )
 }
