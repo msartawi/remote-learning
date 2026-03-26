@@ -77,6 +77,10 @@ const publicPaths = new Set([
   "/api/auth/logout",
 ]);
 
+function unauthorizedError(message = "Unauthenticated") {
+  return Object.assign(new Error(message), { status: 401 });
+}
+
 function getTokenEndpoint(realm?: string) {
   const resolvedRealm = realm || keycloakRealm;
   if (!keycloakBaseUrl || !resolvedRealm) {
@@ -94,7 +98,25 @@ async function requestToken(params: URLSearchParams, realm?: string) {
   });
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `Token request failed (${response.status})`);
+    let message = text || `Token request failed (${response.status})`;
+    if (response.status === 400 || response.status === 401) {
+      try {
+        const parsed = JSON.parse(text);
+        const errorDescription = String(parsed?.error_description || "");
+        const errorCode = String(parsed?.error || "");
+        if (errorDescription) {
+          message = errorDescription;
+        } else if (errorCode === "invalid_grant") {
+          message = "Invalid email or password";
+        } else {
+          message = "Authentication failed";
+        }
+      } catch {
+        message = "Authentication failed";
+      }
+      throw unauthorizedError(message);
+    }
+    throw new Error(message);
   }
   return (await response.json()) as TokenResponse;
 }
@@ -315,30 +337,37 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
           req.auth = await verifyAccessToken(refreshed.access_token);
           return next();
         } catch (refreshErr) {
-          return next(refreshErr);
+          req.session.accessToken = undefined;
+          req.session.refreshToken = undefined;
+          return next(unauthorizedError("Session expired"));
         }
       }
-      return next(err);
+      req.session.accessToken = undefined;
+      req.session.refreshToken = undefined;
+      return next(unauthorizedError("Invalid session"));
     }
   }
 
   const authHeader = req.header("authorization") || "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
   if (!token) {
-    return next(new Error("Missing bearer token"));
+    return next(unauthorizedError("Unauthenticated"));
   }
 
   try {
     req.auth = await verifyAccessToken(token);
     return next();
   } catch (err) {
-    return next(err);
+    return next(unauthorizedError("Invalid token"));
   }
 }
 
 export function requireAnyRole(roles: string[]) {
   return (req: Request, _res: Response, next: NextFunction) => {
     if (!authRequired) return next();
+    if (!req.auth) {
+      return next(unauthorizedError("Unauthenticated"));
+    }
     const userRoles = req.auth?.roles || [];
     const allowed = roles.some((role) => userRoles.includes(role));
     if (!allowed) {
