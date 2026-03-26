@@ -4,8 +4,10 @@ import AuthLayout from './layouts/AuthLayout'
 import RequireAuth from './auth/RequireAuth'
 import RequireRole from './auth/RequireRole'
 import Dashboard from './pages/Dashboard'
+import Legal from './pages/Legal'
 import Login from './pages/Login'
 import NotFound from './pages/NotFound'
+import Privacy from './pages/Privacy'
 import Register from './pages/Register'
 import Session from './pages/Session'
 
@@ -15,6 +17,8 @@ function App() {
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/privacy" element={<Privacy />} />
+        <Route path="/legal" element={<Legal />} />
       </Route>
 
       <Route element={<RequireAuth />}>

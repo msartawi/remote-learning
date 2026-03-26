@@ -87,6 +87,17 @@ function Login() {
           Create an account
         </Link>
       </p>
+      <p className="mt-4 text-center text-xs text-slate-500">
+        By continuing, you agree to our{' '}
+        <Link to="/legal" className="text-indigo-300 hover:text-indigo-200">
+          Legal Terms
+        </Link>{' '}
+        and{' '}
+        <Link to="/privacy" className="text-indigo-300 hover:text-indigo-200">
+          Privacy Policy
+        </Link>
+        .
+      </p>
     </div>
   )
 }
