@@ -68,9 +68,9 @@ function Login() {
             <input type="checkbox" className="h-4 w-4 rounded border-slate-700 bg-slate-900" />
             Keep me signed in
           </label>
-          <button type="button" className="text-emerald-300 hover:text-emerald-200">
+          <Link to="/forgot-password" className="text-emerald-300 hover:text-emerald-200">
             Forgot password?
-          </button>
+          </Link>
         </div>
 
         <button

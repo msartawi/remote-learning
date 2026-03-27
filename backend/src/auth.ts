@@ -70,6 +70,13 @@ type RealmRole = {
   description?: string;
 };
 
+type KeycloakUser = {
+  id: string;
+  username?: string;
+  email?: string;
+  enabled?: boolean;
+};
+
 const publicPaths = new Set([
   "/api/health",
   "/api/auth/login",
@@ -150,6 +157,56 @@ async function getAdminToken() {
   params.set("password", adminPassword);
   const response = await requestToken(params, adminRealm);
   return response.access_token;
+}
+
+export async function findKeycloakUserByEmail(email: string) {
+  if (!keycloakBaseUrl || !keycloakRealm) {
+    throw new Error("Keycloak base URL or realm is missing");
+  }
+  const token = await getAdminToken();
+  const response = await fetch(
+    `${keycloakBaseUrl}/admin/realms/${keycloakRealm}/users?email=${encodeURIComponent(
+      email
+    )}&exact=true`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Failed to query user (${response.status})`);
+  }
+  const users = (await response.json()) as KeycloakUser[];
+  return users.find((user) => String(user.email || "").toLowerCase() === email.toLowerCase()) || null;
+}
+
+export async function resetKeycloakUserPassword(userId: string, password: string) {
+  if (!keycloakBaseUrl || !keycloakRealm) {
+    throw new Error("Keycloak base URL or realm is missing");
+  }
+  const token = await getAdminToken();
+  const response = await fetch(
+    `${keycloakBaseUrl}/admin/realms/${keycloakRealm}/users/${userId}/reset-password`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        type: "password",
+        value: password,
+        temporary: false,
+      }),
+    }
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Failed to set password (${response.status})`);
+  }
 }
 
 export async function createKeycloakUser(payload: {

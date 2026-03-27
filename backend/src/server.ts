@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,11 +12,14 @@ import {
   createKeycloakUser,
   exchangePasswordToken,
   assignRealmRoleToUser,
+  findKeycloakUserByEmail,
   requireAnyRole,
+  resetKeycloakUserPassword,
   verifyAccessToken,
 } from "./auth.js";
 import { query } from "./db.js";
 import { STORAGE_MODES, normalizeStorageMode, type StorageMode } from "./storageModes.js";
+import nodemailer from "nodemailer";
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -36,9 +39,83 @@ const allowSelfAssignRoles = (process.env.ALLOW_SELF_ASSIGN_ROLES || "")
   .split(",")
   .map((role) => role.trim())
   .filter(Boolean);
+const resetLinkBase =
+  process.env.RESET_LINK_BASE ||
+  process.env.APP_PUBLIC_URL ||
+  process.env.INVITE_URL_BASE ||
+  "https://femt.llc";
+const resetTokenTtlMinutes = Number(process.env.RESET_TOKEN_TTL_MINUTES || 30);
+const smtpHost = process.env.SMTP_HOST || "";
+const smtpPort = Number(process.env.SMTP_PORT || 587);
+const smtpSecure = process.env.SMTP_SECURE === "true";
+const smtpUser = process.env.SMTP_USER || "";
+const smtpPass = process.env.SMTP_PASS || "";
+const smtpFrom = process.env.SMTP_FROM || "noreply@femt.llc";
 
 if (process.env.NODE_ENV === "production" && sessionSecret === "dev-session-secret") {
   console.warn("SESSION_SECRET is not set; using insecure default");
+}
+
+const smtpConfigured = Boolean(smtpHost && smtpUser && smtpPass);
+const mailTransport = smtpConfigured
+  ? nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
+      auth: {
+        user: smtpUser,
+        pass: smtpPass,
+      },
+    })
+  : null;
+
+function hashResetToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function buildResetEmailHtml(resetUrl: string) {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reset your password</title>
+  </head>
+  <body style="margin:0;padding:0;background:#0f172a;color:#e2e8f0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0f172a;padding:24px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#111827;border:1px solid #334155;border-radius:16px;overflow:hidden;">
+            <tr>
+              <td style="padding:28px 28px 8px 28px;">
+                <h1 style="margin:0;font-size:22px;line-height:1.3;color:#f8fafc;">Reset your FEMT password</h1>
+                <p style="margin:12px 0 0 0;font-size:14px;line-height:1.6;color:#94a3b8;">
+                  We received a request to reset your account password. For your security, this link expires in ${resetTokenTtlMinutes} minutes and can be used only once.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:20px 28px;">
+                <a href="${escapeHtml(resetUrl)}" style="display:inline-block;background:#34d399;color:#0f172a;text-decoration:none;font-weight:700;font-size:14px;padding:12px 18px;border-radius:10px;">Reset password</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 28px 24px 28px;">
+                <p style="margin:0 0 8px 0;font-size:13px;color:#94a3b8;">If the button does not work, copy and paste this URL:</p>
+                <p style="margin:0;font-size:12px;line-height:1.6;word-break:break-all;color:#cbd5e1;">${escapeHtml(resetUrl)}</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 28px;border-top:1px solid #334155;background:#0b1220;">
+                <p style="margin:0;font-size:12px;color:#64748b;">If you did not request a password reset, you can safely ignore this email.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
 }
 
 app.use(cors({ origin: true, credentials: true }));
@@ -160,6 +237,86 @@ app.post("/api/auth/logout", (req, res) => {
   });
 });
 
+app.post("/api/auth/forgot-password", async (req, res, next) => {
+  try {
+    const email = String(req.body.email || "")
+      .trim()
+      .toLowerCase();
+    // Always return success to avoid user enumeration.
+    if (!email || !mailTransport) {
+      return res.json({ ok: true });
+    }
+
+    const user = await findKeycloakUserByEmail(email);
+    if (!user?.id) {
+      return res.json({ ok: true });
+    }
+
+    const token = randomBytes(32).toString("base64url");
+    const tokenHash = hashResetToken(token);
+    await query(
+      "UPDATE password_reset_tokens SET used_at = NOW() WHERE user_email = $1 AND used_at IS NULL",
+      [email]
+    );
+    await query<PasswordResetTokenRow>(
+      `INSERT INTO password_reset_tokens (user_email, token_hash, expires_at)
+       VALUES ($1, $2, NOW() + ($3::text || ' minutes')::interval)
+       RETURNING id, user_email, token_hash, expires_at, used_at, created_at`,
+      [email, tokenHash, String(resetTokenTtlMinutes)]
+    );
+
+    const resetUrl = `${resetLinkBase.replace(/\/$/, "")}/reset-password?token=${encodeURIComponent(
+      token
+    )}`;
+    await mailTransport.sendMail({
+      from: smtpFrom,
+      to: email,
+      subject: "Reset your FEMT password",
+      html: buildResetEmailHtml(resetUrl),
+    });
+    return res.json({ ok: true });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+app.post("/api/auth/reset-password", async (req, res, next) => {
+  try {
+    const token = String(req.body.token || "").trim();
+    const newPassword = String(req.body.newPassword || "");
+    if (!token || !newPassword || newPassword.length < 8) {
+      return res.status(400).json({ error: "token and a strong newPassword are required" });
+    }
+    const tokenHash = hashResetToken(token);
+    const tokenResult = await query<PasswordResetTokenRow>(
+      `SELECT id, user_email, token_hash, expires_at, used_at, created_at
+       FROM password_reset_tokens
+       WHERE token_hash = $1`,
+      [tokenHash]
+    );
+    if (tokenResult.rows.length === 0) {
+      return res.status(400).json({ error: "invalid_token" });
+    }
+    const row = tokenResult.rows[0];
+    const expired = Date.parse(row.expires_at) < Date.now();
+    if (row.used_at || expired) {
+      return res.status(410).json({ error: "token_expired" });
+    }
+
+    const user = await findKeycloakUserByEmail(row.user_email);
+    if (!user?.id) {
+      await query("UPDATE password_reset_tokens SET used_at = NOW() WHERE id = $1", [row.id]);
+      return res.status(400).json({ error: "invalid_token" });
+    }
+
+    await resetKeycloakUserPassword(user.id, newPassword);
+    await query("UPDATE password_reset_tokens SET used_at = NOW() WHERE id = $1", [row.id]);
+    return res.json({ ok: true });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 app.use(authenticate);
 
 app.use(async (req, _res, next) => {
@@ -224,6 +381,15 @@ type InviteRow = {
   max_uses: number;
   uses_count: number;
   revoked: boolean;
+  created_at: string;
+};
+
+type PasswordResetTokenRow = {
+  id: string;
+  user_email: string;
+  token_hash: string;
+  expires_at: string;
+  used_at: string | null;
   created_at: string;
 };
 

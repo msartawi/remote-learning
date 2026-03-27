@@ -67,6 +67,14 @@ services:
       ALLOW_SELF_ASSIGN_ROLES: "${ALLOW_SELF_ASSIGN_ROLES:-}"
       JITSI_DOMAIN: "${JITSI_DOMAIN:-meet.jit.si}"
       INVITE_URL_BASE: "${INVITE_URL_BASE:-}"
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_SECURE: "${SMTP_SECURE:-false}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASS: "${SMTP_PASS:-}"
+      SMTP_FROM: "${SMTP_FROM:-noreply@femt.llc}"
+      RESET_LINK_BASE: "${RESET_LINK_BASE:-}"
+      RESET_TOKEN_TTL_MINUTES: "${RESET_TOKEN_TTL_MINUTES:-30}"
       AUTO_MIGRATE: "true"
     depends_on:
       - postgres

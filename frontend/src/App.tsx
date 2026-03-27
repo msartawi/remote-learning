@@ -9,6 +9,9 @@ import Login from './pages/Login'
 import NotFound from './pages/NotFound'
 import Privacy from './pages/Privacy'
 import Register from './pages/Register'
+import ForgotPassword from './pages/ForgotPassword'
+import ResetPassword from './pages/ResetPassword'
+import ResetSessionExpired from './pages/ResetSessionExpired'
 import Session from './pages/Session'
 
 function App() {
@@ -17,6 +20,9 @@ function App() {
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/reset-session-expired" element={<ResetSessionExpired />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/legal" element={<Legal />} />
       </Route>
