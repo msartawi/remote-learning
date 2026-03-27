@@ -56,16 +56,20 @@ if (process.env.NODE_ENV === "production" && sessionSecret === "dev-session-secr
   console.warn("SESSION_SECRET is not set; using insecure default");
 }
 
-const smtpConfigured = Boolean(smtpHost && smtpUser && smtpPass);
+const smtpConfigured = Boolean(smtpHost);
 const mailTransport = smtpConfigured
   ? nodemailer.createTransport({
       host: smtpHost,
       port: smtpPort,
       secure: smtpSecure,
-      auth: {
-        user: smtpUser,
-        pass: smtpPass,
-      },
+      ...(smtpUser && smtpPass
+        ? {
+            auth: {
+              user: smtpUser,
+              pass: smtpPass,
+            },
+          }
+        : {}),
     })
   : null;
 
