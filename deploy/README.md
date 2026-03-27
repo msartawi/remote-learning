@@ -54,6 +54,37 @@ The `frontend` container now builds and serves the React app. The backend contai
 - `COOKIE_SECURE=auto` lets the backend detect HTTPS via `X‑Forwarded‑Proto`.
 - `DEFAULT_ROLE` and `ALLOW_SELF_ASSIGN_ROLES` control registration role assignment.
 
+### Keycloak admin service account (recommended)
+
+The backend needs Keycloak admin API access for registration and password reset. Use a dedicated service account client instead of a human admin:
+
+1. In Keycloak, create a confidential client (example: `femt-backend-admin`) in realm `femt`.
+2. Enable **Service Accounts** on the client.
+3. Assign the service account user these realm-management roles: `view-users`, `manage-users`, `query-users`.
+4. Set the backend env vars in `deploy/.env`:
+   - `KEYCLOAK_ADMIN_REALM=femt`
+   - `KEYCLOAK_ADMIN_CLIENT_ID=femt-backend-admin`
+   - `KEYCLOAK_ADMIN_CLIENT_SECRET=...`
+5. Restart the backend container.
+
+If you are using a service account, do **not** rely on `KEYCLOAK_ADMIN_USER`/`KEYCLOAK_ADMIN_PASSWORD` in production.
+
+### Secrets rotation guidance
+
+- Rotate `SESSION_SECRET`, SMTP credentials, and Keycloak admin client secrets on a regular cadence.
+- Update values in `deploy/.env`, then restart the backend (`docker compose restart backend`).
+- Store secrets outside git (password manager or secrets vault).
+
+### Email deliverability notes
+
+For consistent delivery of welcome/reset emails, configure DNS for your sending domain:
+
+- SPF: authorize your mail server IP.
+- DKIM: enable signing on your mail server (recommended).
+- DMARC: start with `p=none` and tighten to `quarantine`/`reject` after validation.
+
+If users report missing emails, check spam folders first and then confirm SMTP logs on `mail.semsm.com`.
+
 ### Frontend build variables
 
 The frontend is built into a static Nginx image during `docker compose up`.

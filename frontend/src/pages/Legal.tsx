@@ -27,6 +27,7 @@ function Legal() {
           <li>Use the service only for lawful educational, collaboration, and organizational purposes.</li>
           <li>Do not attempt unauthorized access, disruption, reverse engineering, or abuse.</li>
           <li>Organization admins are responsible for user provisioning and role assignment.</li>
+          <li>You are responsible for content shared in your sessions and compliance with local laws.</li>
         </ul>
       </section>
 
@@ -48,15 +49,23 @@ function Legal() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-xl font-semibold text-white">5. Availability and changes</h2>
+        <h2 className="text-xl font-semibold text-white">5. Third-party services</h2>
         <p className="text-sm leading-7 text-slate-300">
-          We aim for reliable service but do not guarantee uninterrupted availability. We may modify
-          features, security controls, or policies to maintain platform integrity.
+          FEMT may rely on third-party services for identity, email delivery, and hosting. Your use of
+          FEMT is subject to their applicable terms where required.
         </p>
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-xl font-semibold text-white">6. Liability limitations</h2>
+        <h2 className="text-xl font-semibold text-white">6. Availability and changes</h2>
+        <p className="text-sm leading-7 text-slate-300">
+          We aim for reliable service but do not guarantee uninterrupted availability. We may modify
+          features, security controls, or policies to maintain platform integrity and compliance.
+        </p>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-xl font-semibold text-white">7. Liability limitations</h2>
         <p className="text-sm leading-7 text-slate-300">
           To the maximum extent permitted by law, FEMT is not liable for indirect, incidental, or
           consequential damages arising from service use.
@@ -64,7 +73,7 @@ function Legal() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-xl font-semibold text-white">7. Termination</h2>
+        <h2 className="text-xl font-semibold text-white">8. Termination</h2>
         <p className="text-sm leading-7 text-slate-300">
           We may suspend or terminate access for violations of these terms, security threats, or legal
           requirements.
@@ -72,7 +81,15 @@ function Legal() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-xl font-semibold text-white">8. Contact</h2>
+        <h2 className="text-xl font-semibold text-white">9. Governing law</h2>
+        <p className="text-sm leading-7 text-slate-300">
+          These terms are governed by applicable laws in the jurisdiction where FEMT is operated,
+          unless superseded by mandatory local law.
+        </p>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-xl font-semibold text-white">10. Contact</h2>
         <p className="text-sm leading-7 text-slate-300">
           Legal inquiries: <a href="mailto:legal@femt.llc" className="text-emerald-300">legal@femt.llc</a>
         </p>

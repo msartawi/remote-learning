@@ -24,12 +24,13 @@ function Privacy() {
       <section className="space-y-3">
         <h2 className="text-xl font-semibold text-white">Information we process</h2>
         <ul className="list-disc space-y-2 pl-6 text-sm text-slate-300">
-          <li>Account data: email, display name, organization details, and role assignment.</li>
-          <li>Session metadata: login timestamps, device/browser details, and security logs.</li>
-          <li>Service data: organization and room metadata needed for platform operation.</li>
+          <li>Account data: email, name, organization, and role assignments.</li>
+          <li>Security metadata: IP address, login timestamps, device/browser details, and audit logs.</li>
+          <li>Service data: orgs, rooms, invitations, and session configuration metadata.</li>
+          <li>Support communications you send to us.</li>
           <li>
-            Collaboration content is designed to be encrypted. Depending on org storage mode,
-            encrypted blobs may be stored, or no content may be stored at all.
+            Collaboration content is designed for end-to-end encryption. Depending on org storage
+            mode, encrypted blobs may be stored, or no content may be stored at all.
           </li>
         </ul>
       </section>
@@ -40,8 +41,18 @@ function Privacy() {
           <li>Provide authentication, access control, and secure session management.</li>
           <li>Enforce organization policies and role-based permissions.</li>
           <li>Maintain service reliability, monitor abuse, and prevent unauthorized access.</li>
+          <li>Send essential service communications (welcome and password reset).</li>
           <li>Comply with legal obligations when required.</li>
         </ul>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-xl font-semibold text-white">Sharing and subprocessors</h2>
+        <p className="text-sm leading-7 text-slate-300">
+          We do not sell personal data. We share only what is needed to provide the service, for
+          example: identity and access (Keycloak), SMTP email delivery, and infrastructure hosting.
+          Organization administrators may access organization data and membership information.
+        </p>
       </section>
 
       <section className="space-y-3">
@@ -49,7 +60,8 @@ function Privacy() {
         <p className="text-sm leading-7 text-slate-300">
           FEMT uses essential HTTP-only security cookies for authentication and session continuity.
           These cookies are not used for advertising. We apply role checks, encryption controls, and
-          transport security to protect your data.
+          transport security to protect your data. We encourage organizations to enable end-to-end
+          encryption features where available.
         </p>
       </section>
 
@@ -58,7 +70,8 @@ function Privacy() {
         <p className="text-sm leading-7 text-slate-300">
           We retain account and operational records only as long as needed to provide services,
           maintain security, and meet legal obligations. Organization administrators can request data
-          export or removal based on configured policies.
+          export or removal based on configured policies. Security and audit logs are retained for a
+          limited period to detect abuse.
         </p>
       </section>
 
@@ -67,6 +80,14 @@ function Privacy() {
         <p className="text-sm leading-7 text-slate-300">
           Subject to local law, you may request access, correction, deletion, or restriction of your
           personal data. Contact your organization administrator first, or contact us directly.
+        </p>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-xl font-semibold text-white">Children and education use</h2>
+        <p className="text-sm leading-7 text-slate-300">
+          FEMT is intended for use by organizations and schools. Students should use the service
+          under the supervision of their organization and with appropriate consent where required.
         </p>
       </section>
 

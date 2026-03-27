@@ -7,6 +7,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import session from "express-session";
+import rateLimit from "express-rate-limit";
 import {
   authenticate,
   createKeycloakUser,
@@ -53,6 +54,10 @@ const smtpIgnoreTls =
 const smtpUser = process.env.SMTP_USER || "";
 const smtpPass = process.env.SMTP_PASS || "";
 const smtpFrom = process.env.SMTP_FROM || "noreply@femt.llc";
+const authRateWindowMs = Number(process.env.AUTH_RATE_WINDOW_MS || 15 * 60 * 1000);
+const authRateMax = Number(process.env.AUTH_RATE_MAX || 20);
+const forgotRateMax = Number(process.env.FORGOT_RATE_MAX || 6);
+const resetRateMax = Number(process.env.RESET_RATE_MAX || 6);
 
 if (process.env.NODE_ENV === "production" && sessionSecret === "dev-session-secret") {
   console.warn("SESSION_SECRET is not set; using insecure default");
@@ -78,6 +83,40 @@ const mailTransport = smtpConfigured
 
 function hashResetToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
+}
+
+function hashIdentifier(value: string) {
+  return createHash("sha256").update(value.trim().toLowerCase()).digest("hex");
+}
+
+function getErrorMessage(err: unknown) {
+  if (err instanceof Error) {
+    return err.message;
+  }
+  return String(err);
+}
+
+function auditAuthEvent(
+  event: string,
+  req: express.Request,
+  details: {
+    email?: string;
+    success?: boolean;
+    reason?: string;
+    role?: string;
+  }
+) {
+  const entry = {
+    event,
+    success: details.success ?? true,
+    ip: req.ip,
+    userAgent: req.get("user-agent") || "",
+    emailHash: details.email ? hashIdentifier(details.email) : undefined,
+    reason: details.reason,
+    role: details.role,
+    at: new Date().toISOString(),
+  };
+  console.info("auth_audit", JSON.stringify(entry));
 }
 
 function buildResetEmailHtml(resetUrl: string) {
@@ -123,6 +162,17 @@ function buildResetEmailHtml(resetUrl: string) {
     </table>
   </body>
 </html>`;
+}
+
+function buildResetEmailText(resetUrl: string) {
+  return [
+    "Reset your FEMT password",
+    "",
+    `Use this link to reset your password (expires in ${resetTokenTtlMinutes} minutes):`,
+    resetUrl,
+    "",
+    "If you did not request this, you can ignore this email.",
+  ].join("\n");
 }
 
 function buildWelcomeEmailHtml(options: {
@@ -194,6 +244,27 @@ function buildWelcomeEmailHtml(options: {
 </html>`;
 }
 
+function buildWelcomeEmailText(options: {
+  name: string;
+  appUrl: string;
+  role?: string;
+  organization?: string;
+}) {
+  const lines = [
+    `Welcome to FEMT, ${options.name || "there"}`,
+    "",
+    "Your FEMT account is ready. You can now join classes, collaborate with your organization, and host secure learning sessions.",
+  ];
+  if (options.role) {
+    lines.push(`Role: ${options.role}`);
+  }
+  if (options.organization) {
+    lines.push(`Organization: ${options.organization}`);
+  }
+  lines.push("", "Open FEMT:", options.appUrl);
+  return lines.join("\n");
+}
+
 app.use(cors({ origin: true, credentials: true }));
 app.use(morgan("dev"));
 app.use(express.json());
@@ -216,9 +287,33 @@ app.use(
   })
 );
 
-app.post("/api/auth/login", async (req, res, next) => {
+const authLimiter = rateLimit({
+  windowMs: authRateWindowMs,
+  max: authRateMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again later." },
+});
+
+const forgotLimiter = rateLimit({
+  windowMs: authRateWindowMs,
+  max: forgotRateMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again later." },
+});
+
+const resetLimiter = rateLimit({
+  windowMs: authRateWindowMs,
+  max: resetRateMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again later." },
+});
+
+app.post("/api/auth/login", authLimiter, async (req, res, next) => {
+  const email = String(req.body.email || "").trim();
   try {
-    const email = String(req.body.email || "").trim();
     const password = String(req.body.password || "");
     if (!email || !password) {
       return res.status(400).json({ error: "email and password are required" });
@@ -235,18 +330,20 @@ app.post("/api/auth/login", async (req, res, next) => {
       roles: authContext.roles,
       orgIds: authContext.orgIds || [],
     });
+    auditAuthEvent("login", req, { email, success: true });
   } catch (err) {
+    auditAuthEvent("login", req, { email, success: false, reason: getErrorMessage(err) });
     next(err);
   }
 });
 
-app.post("/api/auth/register", async (req, res, next) => {
+app.post("/api/auth/register", authLimiter, async (req, res, next) => {
+  const email = String(req.body.email || "").trim();
+  const organization = String(req.body.organization || "").trim();
   try {
-    const email = String(req.body.email || "").trim();
     const password = String(req.body.password || "");
     const firstName = String(req.body.firstName || "").trim();
     const lastName = String(req.body.lastName || "").trim();
-    const organization = String(req.body.organization || "").trim();
     const requestedRole = String(req.body.role || "").trim();
     const inviteCode = String(req.body.invite_code || req.body.inviteCode || "")
       .trim()
@@ -304,6 +401,12 @@ app.post("/api/auth/register", async (req, res, next) => {
           from: smtpFrom,
           to: email,
           subject: "Welcome to FEMT",
+          text: buildWelcomeEmailText({
+            name: displayName || email,
+            appUrl,
+            role: assignedRole || undefined,
+            organization: organization || undefined,
+          }),
           html: buildWelcomeEmailHtml({
             name: displayName || email,
             appUrl,
@@ -321,7 +424,9 @@ app.post("/api/auth/register", async (req, res, next) => {
       orgIds: authContext.orgIds || [],
       assignedRole,
     });
+    auditAuthEvent("register", req, { email, success: true, role: assignedRole || undefined });
   } catch (err) {
+    auditAuthEvent("register", req, { email, success: false, reason: getErrorMessage(err) });
     next(err);
   }
 });
@@ -332,7 +437,7 @@ app.post("/api/auth/logout", (req, res) => {
   });
 });
 
-app.post("/api/auth/forgot-password", async (req, res, next) => {
+app.post("/api/auth/forgot-password", forgotLimiter, async (req, res, next) => {
   const email = String(req.body.email || "")
     .trim()
     .toLowerCase();
@@ -341,6 +446,7 @@ app.post("/api/auth/forgot-password", async (req, res, next) => {
     return res.json({ ok: true });
   }
   try {
+    auditAuthEvent("reset_requested", req, { email, success: true });
     const user = await findKeycloakUserByEmail(email);
     if (!user?.id) {
       return res.json({ ok: true });
@@ -366,16 +472,18 @@ app.post("/api/auth/forgot-password", async (req, res, next) => {
       from: smtpFrom,
       to: email,
       subject: "Reset your FEMT password",
+      text: buildResetEmailText(resetUrl),
       html: buildResetEmailHtml(resetUrl),
     });
   } catch (err) {
     // Keep response generic even when SMTP/Keycloak fails.
+    auditAuthEvent("reset_requested", req, { email, success: false, reason: getErrorMessage(err) });
     console.error("Forgot password dispatch failed", err);
   }
   return res.json({ ok: true });
 });
 
-app.post("/api/auth/reset-password", async (req, res, next) => {
+app.post("/api/auth/reset-password", resetLimiter, async (req, res, next) => {
   try {
     const token = String(req.body.token || "").trim();
     const newPassword = String(req.body.newPassword || "");
@@ -406,8 +514,10 @@ app.post("/api/auth/reset-password", async (req, res, next) => {
 
     await resetKeycloakUserPassword(user.id, newPassword);
     await query("UPDATE password_reset_tokens SET used_at = NOW() WHERE id = $1", [row.id]);
+    auditAuthEvent("reset_completed", req, { email: row.user_email, success: true });
     return res.json({ ok: true });
   } catch (err) {
+    auditAuthEvent("reset_completed", req, { success: false, reason: getErrorMessage(err) });
     return next(err);
   }
 });
