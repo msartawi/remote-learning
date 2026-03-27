@@ -125,6 +125,75 @@ function buildResetEmailHtml(resetUrl: string) {
 </html>`;
 }
 
+function buildWelcomeEmailHtml(options: {
+  name: string;
+  appUrl: string;
+  role?: string;
+  organization?: string;
+}) {
+  const greetingName = options.name || "there";
+  const roleLine = options.role
+    ? `<p style="margin:8px 0 0 0;font-size:13px;color:#94a3b8;">Role: ${escapeHtml(
+        options.role
+      )}</p>`
+    : "";
+  const orgLine = options.organization
+    ? `<p style="margin:4px 0 0 0;font-size:13px;color:#94a3b8;">Organization: ${escapeHtml(
+        options.organization
+      )}</p>`
+    : "";
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Welcome to FEMT</title>
+  </head>
+  <body style="margin:0;padding:0;background:#0f172a;color:#e2e8f0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0f172a;padding:24px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#111827;border:1px solid #334155;border-radius:16px;overflow:hidden;">
+            <tr>
+              <td style="padding:28px 28px 8px 28px;">
+                <h1 style="margin:0;font-size:22px;line-height:1.3;color:#f8fafc;">Welcome to FEMT, ${escapeHtml(
+                  greetingName
+                )}</h1>
+                <p style="margin:12px 0 0 0;font-size:14px;line-height:1.6;color:#94a3b8;">
+                  Your FEMT account is ready. You can now join classes, collaborate with your organization, and host secure learning sessions.
+                </p>
+                ${roleLine}
+                ${orgLine}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:20px 28px;">
+                <a href="${escapeHtml(
+                  options.appUrl
+                )}" style="display:inline-block;background:#34d399;color:#0f172a;text-decoration:none;font-weight:700;font-size:14px;padding:12px 18px;border-radius:10px;">Open FEMT</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 28px 24px 28px;">
+                <p style="margin:0 0 8px 0;font-size:13px;color:#94a3b8;">If the button does not work, copy and paste this URL:</p>
+                <p style="margin:0;font-size:12px;line-height:1.6;word-break:break-all;color:#cbd5e1;">${escapeHtml(
+                  options.appUrl
+                )}</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 28px;border-top:1px solid #334155;background:#0b1220;">
+                <p style="margin:0;font-size:12px;color:#64748b;">Need help? Reply to this email or contact your administrator.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+}
+
 app.use(cors({ origin: true, credentials: true }));
 app.use(morgan("dev"));
 app.use(express.json());
@@ -227,6 +296,25 @@ app.post("/api/auth/register", async (req, res, next) => {
     req.session.user = authContext.user;
     req.session.roles = authContext.roles;
     req.session.orgIds = authContext.orgIds;
+    if (mailTransport) {
+      const appUrl = resetLinkBase.replace(/\/$/, "");
+      const displayName = [firstName, lastName].filter(Boolean).join(" ").trim();
+      mailTransport
+        .sendMail({
+          from: smtpFrom,
+          to: email,
+          subject: "Welcome to FEMT",
+          html: buildWelcomeEmailHtml({
+            name: displayName || email,
+            appUrl,
+            role: assignedRole || undefined,
+            organization: organization || undefined,
+          }),
+        })
+        .catch((err) => {
+          console.error("Welcome email dispatch failed", err);
+        });
+    }
     res.status(201).json({
       user: authContext.user,
       roles: authContext.roles,
