@@ -524,6 +524,105 @@ app.post("/api/auth/reset-password", resetLimiter, async (req, res, next) => {
 
 app.use(authenticate);
 
+app.post("/api/mediasoup/rooms", requireAnyRole(["org_admin", "teacher"]), async (req, res, next) => {
+  try {
+    const roomId = String(req.body.room_id || req.body.roomId || "").trim() || undefined;
+    const payload = await requestMediasoup("/rooms", {
+      method: "POST",
+      body: JSON.stringify({ roomId }),
+    });
+    res.json(payload);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get("/api/mediasoup/rooms/:roomId", requireAnyRole(["org_admin", "teacher", "student"]), async (req, res, next) => {
+  try {
+    const payload = await requestMediasoup(`/rooms/${encodeURIComponent(req.params.roomId)}`);
+    res.json(payload);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post(
+  "/api/mediasoup/rooms/:roomId/transports",
+  requireAnyRole(["org_admin", "teacher", "student"]),
+  async (req, res, next) => {
+    try {
+      const payload = await requestMediasoup(`/rooms/${encodeURIComponent(req.params.roomId)}/transports`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      res.json(payload);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+app.post(
+  "/api/mediasoup/rooms/:roomId/transports/:transportId/connect",
+  requireAnyRole(["org_admin", "teacher", "student"]),
+  async (req, res, next) => {
+    try {
+      const payload = await requestMediasoup(
+        `/rooms/${encodeURIComponent(req.params.roomId)}/transports/${encodeURIComponent(
+          req.params.transportId
+        )}/connect`,
+        {
+          method: "POST",
+          body: JSON.stringify({ dtlsParameters: req.body.dtlsParameters }),
+        }
+      );
+      res.json(payload);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+app.post(
+  "/api/mediasoup/rooms/:roomId/producers",
+  requireAnyRole(["org_admin", "teacher"]),
+  async (req, res, next) => {
+    try {
+      const payload = await requestMediasoup(`/rooms/${encodeURIComponent(req.params.roomId)}/producers`, {
+        method: "POST",
+        body: JSON.stringify({
+          transportId: req.body.transportId,
+          kind: req.body.kind,
+          rtpParameters: req.body.rtpParameters,
+        }),
+      });
+      res.json(payload);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+app.post(
+  "/api/mediasoup/rooms/:roomId/consumers",
+  requireAnyRole(["org_admin", "teacher", "student"]),
+  async (req, res, next) => {
+    try {
+      const payload = await requestMediasoup(`/rooms/${encodeURIComponent(req.params.roomId)}/consumers`, {
+        method: "POST",
+        body: JSON.stringify({
+          transportId: req.body.transportId,
+          producerId: req.body.producerId,
+          rtpCapabilities: req.body.rtpCapabilities,
+        }),
+      });
+      res.json(payload);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 app.use(async (req, _res, next) => {
   try {
     const email = req.auth?.user?.email?.toLowerCase();
@@ -616,6 +715,7 @@ type SessionBootstrap = {
 
 const jitsiDomain = process.env.JITSI_DOMAIN || "meet.jit.si";
 const inviteUrlBase = process.env.INVITE_URL_BASE || process.env.APP_PUBLIC_URL || "";
+const mediasoupSandboxUrl = process.env.MEDIASOUP_SANDBOX_URL || "http://localhost:4001";
 
 function isOrgAllowed(req: express.Request, orgId: string) {
   const roles = req.auth?.roles || [];
@@ -634,6 +734,23 @@ function normalizeInviteRole(input: unknown): MembershipRow["role"] | null {
 
 function generateInviteCode() {
   return randomBytes(9).toString("base64url").toUpperCase();
+}
+
+async function requestMediasoup(path: string, init?: RequestInit) {
+  const response = await fetch(`${mediasoupSandboxUrl}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    const error = new Error(text || `Mediasoup request failed (${response.status})`);
+    (error as Error & { status?: number }).status = response.status;
+    throw error;
+  }
+  return text ? JSON.parse(text) : null;
 }
 
 const uuidPattern =

@@ -74,6 +74,7 @@ services:
       RESET_RATE_MAX: "${RESET_RATE_MAX:-}"
       JITSI_DOMAIN: "${JITSI_DOMAIN:-meet.jit.si}"
       INVITE_URL_BASE: "${INVITE_URL_BASE:-}"
+      MEDIASOUP_SANDBOX_URL: "${MEDIASOUP_SANDBOX_URL:-}"
       SMTP_HOST: "${SMTP_HOST:-}"
       SMTP_PORT: "${SMTP_PORT:-587}"
       SMTP_SECURE: "${SMTP_SECURE:-false}"
