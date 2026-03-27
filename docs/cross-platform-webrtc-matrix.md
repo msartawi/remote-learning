@@ -1,6 +1,6 @@
 # Cross-Platform WebRTC Support Matrix
 
-Last updated: 2026-03-13
+Last updated: 2026-03-27
 
 ## Packaging decision path
 
@@ -27,6 +27,12 @@ Last updated: 2026-03-13
 3. Screen-share start/stop reliability and presenter handoff.
 4. Session reconnect after network interruption.
 5. Chat/whiteboard event delivery under packet loss simulation.
+
+## Packaging next steps
+
+- Desktop: Electron wrapper with auto-update baseline and media permission prompts.
+- Mobile: React Native shell with native permission handling and foreground session keep-alive.
+- Define feature fallbacks for Safari and mobile if Insertable Streams are unavailable.
 
 ## Recommendation
 

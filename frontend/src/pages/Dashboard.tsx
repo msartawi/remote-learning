@@ -5,10 +5,12 @@ import {
   createOrg,
   createOrgInvite,
   createRoom,
+  getOrgSettings,
   getOrgInvites,
   getOrgRooms,
   getOrgs,
   redeemInvite,
+  updateOrgSettings,
 } from '../data/orgApi'
 import type { Org, StorageMode } from '../types'
 
@@ -32,6 +34,10 @@ function Dashboard() {
     Record<string, { role: 'student' | 'teacher' | 'org_admin'; expires: number; maxUses: number }>
   >({})
   const [inviteLists, setInviteLists] = useState<Record<string, { code: string; role: string }[]>>({})
+  const [orgSettingsDrafts, setOrgSettingsDrafts] = useState<
+    Record<string, { defaultMode: StorageMode; allowRoomOverride: boolean }>
+  >({})
+  const [orgSettingsSaving, setOrgSettingsSaving] = useState<Record<string, boolean>>({})
   const { authFetch, hasAnyRole, hasRole, roles } = useAuth()
   const canCreateOrg = hasAnyRole(['org_admin'])
   const canCreateRoom = hasAnyRole(['org_admin', 'teacher'])
@@ -58,6 +64,41 @@ function Dashboard() {
       active = false
     }
   }, [authFetch])
+
+  useEffect(() => {
+    let mounted = true
+    const ensureDrafts = async () => {
+      const updates: Record<string, { defaultMode: StorageMode; allowRoomOverride: boolean }> = {}
+      for (const org of orgs) {
+        if (orgSettingsDrafts[org.id]) continue
+        if (canManageInvites) {
+          try {
+            const settings = await getOrgSettings(authFetch, API_BASE_URL, org.id)
+            updates[org.id] = {
+              defaultMode: settings.default_storage_mode,
+              allowRoomOverride: settings.allow_room_override,
+            }
+          } catch {
+            updates[org.id] = {
+              defaultMode: org.default_storage_mode,
+              allowRoomOverride: org.allow_room_override,
+            }
+          }
+        } else {
+          updates[org.id] = {
+            defaultMode: org.default_storage_mode,
+            allowRoomOverride: org.allow_room_override,
+          }
+        }
+      }
+      if (!mounted || Object.keys(updates).length === 0) return
+      setOrgSettingsDrafts((prev) => ({ ...prev, ...updates }))
+    }
+    ensureDrafts()
+    return () => {
+      mounted = false
+    }
+  }, [orgs, orgSettingsDrafts, authFetch, canManageInvites])
 
   useEffect(() => {
     if (!canManageInvites) return
@@ -118,6 +159,58 @@ function Dashboard() {
         [orgId]: { ...current, ...patch },
       }
     })
+  }
+
+  const updateOrgSettingsDraft = (
+    orgId: string,
+    patch: Partial<{ defaultMode: StorageMode; allowRoomOverride: boolean }>
+  ) => {
+    setOrgSettingsDrafts((prev) => {
+      const current =
+        prev[orgId] ?? ({
+          defaultMode: 'metadata_only',
+          allowRoomOverride: false,
+        } as { defaultMode: StorageMode; allowRoomOverride: boolean })
+      return {
+        ...prev,
+        [orgId]: { ...current, ...patch },
+      }
+    })
+  }
+
+  const handleSaveOrgSettings = async (orgId: string, event: FormEvent) => {
+    event.preventDefault()
+    const draft = orgSettingsDrafts[orgId]
+    if (!draft) return
+    setOrgSettingsSaving((prev) => ({ ...prev, [orgId]: true }))
+    try {
+      const updated = await updateOrgSettings(authFetch, API_BASE_URL, orgId, {
+        default_storage_mode: draft.defaultMode,
+        allow_room_override: draft.allowRoomOverride,
+      })
+      setOrgs((prev) =>
+        prev.map((org) =>
+          org.id === orgId
+            ? {
+                ...org,
+                default_storage_mode: updated.default_storage_mode,
+                allow_room_override: updated.allow_room_override,
+              }
+            : org
+        )
+      )
+      setOrgSettingsDrafts((prev) => ({
+        ...prev,
+        [orgId]: {
+          defaultMode: updated.default_storage_mode,
+          allowRoomOverride: updated.allow_room_override,
+        },
+      }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update org settings')
+    } finally {
+      setOrgSettingsSaving((prev) => ({ ...prev, [orgId]: false }))
+    }
   }
 
   const handleRedeemInvite = async (event: FormEvent) => {
@@ -355,6 +448,77 @@ function Dashboard() {
                   <span className="chip">
                     {org.allow_room_override ? 'Room overrides enabled' : 'Room overrides locked'}
                   </span>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-slate-800/70 bg-slate-900/50 px-4 py-4 text-sm text-slate-300">
+                  {hasRole('org_admin') ? (
+                    <form className="space-y-3" onSubmit={(event) => handleSaveOrgSettings(org.id, event)}>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                          Default storage mode
+                          <select
+                            value={
+                              orgSettingsDrafts[org.id]?.defaultMode ?? org.default_storage_mode
+                            }
+                            onChange={(event) =>
+                              updateOrgSettingsDraft(org.id, {
+                                defaultMode: event.target.value as StorageMode,
+                              })
+                            }
+                            className="mt-2 w-full rounded-lg border border-slate-800/70 bg-slate-900/80 px-3 py-2 text-xs text-slate-100"
+                          >
+                            {storageOptions.map((option) => (
+                              <option key={option} value={option}>
+                                {storageLabel(option)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="flex items-center gap-2 text-xs text-slate-400">
+                          <input
+                            type="checkbox"
+                            checked={
+                              orgSettingsDrafts[org.id]?.allowRoomOverride ??
+                              org.allow_room_override
+                            }
+                            onChange={(event) =>
+                              updateOrgSettingsDraft(org.id, {
+                                allowRoomOverride: event.target.checked,
+                              })
+                            }
+                            className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-emerald-400"
+                          />
+                          Allow room storage overrides
+                        </label>
+                      </div>
+                      <button
+                        type="submit"
+                        className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-slate-950 transition hover:bg-emerald-300"
+                        disabled={orgSettingsSaving[org.id]}
+                      >
+                        {orgSettingsSaving[org.id] ? 'Saving…' : 'Save settings'}
+                      </button>
+                    </form>
+                  ) : (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                          Default storage mode
+                        </p>
+                        <p className="mt-1 text-sm text-slate-200">
+                          {storageLabel(org.default_storage_mode)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                          Room overrides
+                        </p>
+                        <p className="mt-1 text-sm text-slate-200">
+                          {org.allow_room_override ? 'Allowed' : 'Not allowed'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-4 space-y-3">

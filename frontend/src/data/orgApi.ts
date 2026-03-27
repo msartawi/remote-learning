@@ -65,6 +65,31 @@ export async function createRoom(
   )
 }
 
+export async function getOrgSettings(
+  authFetch: AuthFetch,
+  baseUrl: string,
+  orgId: string
+): Promise<Pick<Org, 'id' | 'name' | 'default_storage_mode' | 'allow_room_override'>> {
+  return handleResponse<Pick<Org, 'id' | 'name' | 'default_storage_mode' | 'allow_room_override'>>(
+    await authFetch(`${baseUrl}/orgs/${orgId}/settings`)
+  )
+}
+
+export async function updateOrgSettings(
+  authFetch: AuthFetch,
+  baseUrl: string,
+  orgId: string,
+  payload: { default_storage_mode: StorageMode; allow_room_override: boolean }
+): Promise<Pick<Org, 'id' | 'name' | 'default_storage_mode' | 'allow_room_override'>> {
+  return handleResponse<Pick<Org, 'id' | 'name' | 'default_storage_mode' | 'allow_room_override'>>(
+    await authFetch(`${baseUrl}/orgs/${orgId}/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+  )
+}
+
 export async function getOrgInvites(
   authFetch: AuthFetch,
   baseUrl: string,
