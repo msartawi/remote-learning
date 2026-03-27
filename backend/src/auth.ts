@@ -51,6 +51,8 @@ const keycloakRealm =
   process.env.KEYCLOAK_REALM || (issuer ? issuer.split("/realms/")[1] : undefined);
 const keycloakClientId = process.env.KEYCLOAK_CLIENT_ID || "femt-frontend";
 const adminRealm = process.env.KEYCLOAK_ADMIN_REALM || "master";
+const adminClientId = process.env.KEYCLOAK_ADMIN_CLIENT_ID;
+const adminClientSecret = process.env.KEYCLOAK_ADMIN_CLIENT_SECRET;
 const adminUser = process.env.KEYCLOAK_ADMIN_USER || process.env.KEYCLOAK_ADMIN;
 const adminPassword = process.env.KEYCLOAK_ADMIN_PASSWORD;
 
@@ -147,6 +149,18 @@ export async function refreshAccessToken(refreshToken: string) {
 }
 
 async function getAdminToken() {
+  if (adminClientId || adminClientSecret) {
+    if (!adminClientId || !adminClientSecret) {
+      throw new Error("Keycloak admin client credentials missing");
+    }
+    const params = new URLSearchParams();
+    params.set("grant_type", "client_credentials");
+    params.set("client_id", adminClientId);
+    params.set("client_secret", adminClientSecret);
+    const response = await requestToken(params, adminRealm);
+    return response.access_token;
+  }
+
   if (!adminUser || !adminPassword) {
     throw new Error("Keycloak admin credentials missing");
   }
