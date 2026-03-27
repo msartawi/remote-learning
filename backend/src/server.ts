@@ -48,6 +48,8 @@ const resetTokenTtlMinutes = Number(process.env.RESET_TOKEN_TTL_MINUTES || 30);
 const smtpHost = process.env.SMTP_HOST || "";
 const smtpPort = Number(process.env.SMTP_PORT || 587);
 const smtpSecure = process.env.SMTP_SECURE === "true";
+const smtpIgnoreTls =
+  process.env.SMTP_IGNORE_TLS === "true" || process.env.SMTP_IGNORE_TLS === "1";
 const smtpUser = process.env.SMTP_USER || "";
 const smtpPass = process.env.SMTP_PASS || "";
 const smtpFrom = process.env.SMTP_FROM || "noreply@femt.llc";
@@ -62,6 +64,7 @@ const mailTransport = smtpConfigured
       host: smtpHost,
       port: smtpPort,
       secure: smtpSecure,
+      ignoreTLS: smtpIgnoreTls,
       ...(smtpUser && smtpPass
         ? {
             auth: {
