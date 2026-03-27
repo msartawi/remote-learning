@@ -238,15 +238,14 @@ app.post("/api/auth/logout", (req, res) => {
 });
 
 app.post("/api/auth/forgot-password", async (req, res, next) => {
+  const email = String(req.body.email || "")
+    .trim()
+    .toLowerCase();
+  // Always return success to avoid user enumeration.
+  if (!email || !mailTransport) {
+    return res.json({ ok: true });
+  }
   try {
-    const email = String(req.body.email || "")
-      .trim()
-      .toLowerCase();
-    // Always return success to avoid user enumeration.
-    if (!email || !mailTransport) {
-      return res.json({ ok: true });
-    }
-
     const user = await findKeycloakUserByEmail(email);
     if (!user?.id) {
       return res.json({ ok: true });
@@ -274,10 +273,11 @@ app.post("/api/auth/forgot-password", async (req, res, next) => {
       subject: "Reset your FEMT password",
       html: buildResetEmailHtml(resetUrl),
     });
-    return res.json({ ok: true });
   } catch (err) {
-    return next(err);
+    // Keep response generic even when SMTP/Keycloak fails.
+    console.error("Forgot password dispatch failed", err);
   }
+  return res.json({ ok: true });
 });
 
 app.post("/api/auth/reset-password", async (req, res, next) => {
